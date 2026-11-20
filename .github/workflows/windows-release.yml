@@ -1,0 +1,72 @@
+name: Windows x64 release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example, 1.0.0)"
+        required: true
+        type: string
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-2025
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    env:
+      PPS_RELEASE_VERSION: ${{ inputs.version }}
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+      NUGET_PACKAGES: ${{ github.workspace }}\.nuget\packages
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          if ($env:PPS_RELEASE_VERSION -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw 'Expected a version such as 1.0.0.'
+          }
+
+      - name: Set up .NET and NuGet cache
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: src/**/packages*.lock.json
+
+      - name: Cache model weights
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: assets/models/*.onnx
+          key: onnx-models-${{ hashFiles('assets/models/models.manifest.json') }}
+
+      - name: Test and package
+        shell: pwsh
+        run: ./scripts/build_portable.ps1 -Version $env:PPS_RELEASE_VERSION
+
+      - name: Attest the ZIP build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/PhotoPrintStudio-${{ inputs.version }}-win-x64.zip
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:PPS_RELEASE_VERSION
+          $base = "dist/PhotoPrintStudio-$version-win-x64"
+          gh release create "v$version" "$base.zip" "$base.sha256" --target $env:GITHUB_SHA --title "光影印坊 $version" --notes "Windows x64 便携版。完整解压后运行 PhotoPrintStudio.exe。ZIP 由 GitHub Actions 构建，附 SHA-256 和构建来源证明。"

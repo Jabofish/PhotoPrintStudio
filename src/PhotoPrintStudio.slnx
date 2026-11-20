@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="PhotoPrintStudio.Core/PhotoPrintStudio.Core.csproj" />
+  <Project Path="PhotoPrintStudio.App/PhotoPrintStudio.App.csproj" />
+  <Project Path="PhotoPrintStudio.Tests/PhotoPrintStudio.Tests.csproj" />
+  <Project Path="PhotoPrintStudio.App.Tests/PhotoPrintStudio.App.Tests.csproj" />
+  <Project Path="PhotoPrintStudio.PerformanceTests/PhotoPrintStudio.PerformanceTests.csproj" />
+</Solution>

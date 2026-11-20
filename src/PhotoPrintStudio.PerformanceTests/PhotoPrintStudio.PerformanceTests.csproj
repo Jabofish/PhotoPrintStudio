@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../PhotoPrintStudio.App/PhotoPrintStudio.App.csproj" />
+    <Resource Include="../PhotoPrintStudio.App/Themes/DarkTheme.xaml" Link="Themes/DarkTheme.xaml" />
+    <Resource Include="../PhotoPrintStudio.App/Themes/LightTheme.xaml" Link="Themes/LightTheme.xaml" />
+  </ItemGroup>
+</Project>

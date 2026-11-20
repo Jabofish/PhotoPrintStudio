@@ -1,0 +1,32 @@
+# Default text auto-normalization
+* text=auto
+
+# C# / XAML / Project files
+*.cs text diff=csharp
+*.csproj text
+*.slnx text
+*.xaml text
+*.xml text
+*.json text
+*.md text
+*.txt text
+
+# Windows scripts
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files (prevent line-ending corruption)
+*.onnx binary
+*.dll binary
+*.exe binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.icc binary
+*.icm binary
+
+# Preserve the whitespace of upstream license and notice documents.
+assets/licenses/** whitespace=-blank-at-eof,-blank-at-eol

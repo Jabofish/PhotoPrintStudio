@@ -1,0 +1,75 @@
+<UserControl x:Class="PhotoPrintStudio.App.Controls.StudioSliderRow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Height="26"
+             Margin="0,1,0,1">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="{Binding LabelWidth, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="46" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" VerticalAlignment="Center"
+                MouseLeftButtonDown="Header_MouseLeftButtonDown" Cursor="Hand"
+                ToolTip="双击参数名或数值重置为默认值">
+            <TextBlock Text="{Binding Title, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                       Foreground="{DynamicResource BrushTextSecondary}"
+                       FontSize="11.5"
+                       TextTrimming="CharacterEllipsis" />
+        </Border>
+
+        <Slider x:Name="PartSlider"
+                Grid.Column="1"
+                Style="{StaticResource StudioSlider}"
+                AutomationProperties.Name="{Binding Title, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                Margin="4,0"
+                Minimum="{Binding Minimum, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                Maximum="{Binding Maximum, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                Value="{Binding Value, Mode=TwoWay, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                TickFrequency="{Binding Step, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                SmallChange="{Binding Step, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                PreviewMouseLeftButtonDown="PartSlider_PreviewMouseLeftButtonDown"
+                PreviewMouseLeftButtonUp="PartSlider_PreviewMouseLeftButtonUp"
+                MouseDoubleClick="PartSlider_MouseDoubleClick"
+                ToolTip="方向键微调，Shift 加大步长，Enter 或 F2 输入，Alt+Backspace 恢复默认" />
+
+        <Border x:Name="BadgeBorder" Grid.Column="2"
+                Background="{DynamicResource BrushBgInput}"
+                BorderBrush="{DynamicResource BrushBorderSubtle}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Height="20"
+                VerticalAlignment="Center"
+                Cursor="IBeam"
+                Focusable="True"
+                AutomationProperties.Name="{Binding Title, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                MouseLeftButtonDown="Badge_MouseLeftButtonDown"
+                MouseRightButtonUp="Badge_MouseRightButtonUp"
+                ToolTip="方向键微调，Shift 加大步长，Enter 或 F2 输入，右键或 Alt+Backspace 恢复默认">
+            <Grid>
+                <TextBlock x:Name="ValueBadge"
+                           Text="0"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource BrushTextPrimary}"
+                           FontSize="10.5"
+                           FontFamily="Consolas, Microsoft YaHei UI" />
+                <TextBox x:Name="BadgeEditor"
+                         Visibility="Collapsed"
+                         Padding="2,0"
+                         Margin="0"
+                         BorderThickness="0"
+                         Background="Transparent"
+                         Foreground="{DynamicResource BrushTextPrimary}"
+                         CaretBrush="{DynamicResource BrushAccent}"
+                         HorizontalContentAlignment="Center"
+                         VerticalContentAlignment="Center"
+                         FontSize="10.5"
+                         FontFamily="Consolas, Microsoft YaHei UI"
+                         KeyDown="BadgeEditor_KeyDown"
+                         LostKeyboardFocus="BadgeEditor_LostKeyboardFocus" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

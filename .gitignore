@@ -1,0 +1,63 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+out/
+publish/
+artifacts/
+
+# Portable distribution outputs & archives
+/dist/
+*.zip
+*.7z
+*.rar
+
+# Portable runtime data & user logs/projects
+portable_data/
+*.ppsproj
+*.log
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+project.lock.json
+project.fragment.lock.json
+
+# Test results & coverage
+[Tt]est[Rr]esult*/
+*.trx
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# Temporary & OS files
+*.tmp
+*.bak
+~$*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Models downloaded by scripts/fetch-models.ps1 and local credentials
+/assets/models/*.onnx
+*.download
+*.pfx
+*.p12
+.env
+.env.*

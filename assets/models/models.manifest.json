@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1.0",
+  "models": [
+    {
+      "fileName": "pas-photo-matting-v1.onnx",
+      "role": "matting",
+      "displayName": "Pas 证件照人像抠图 v1（默认推荐）",
+      "priority": -2,
+      "resizeMode": "letterbox",
+      "normalization": "minus1_to_1",
+      "defaultBundled": true,
+      "license": "Apache-2.0",
+      "sha256": "9432043586CE117DC803FA3841B80FCFBA0FE9740D8AECEB30A095D1741EBE6E",
+      "downloadUrl": "https://github.com/didik-maulana/pas-photo-matting/releases/download/v1.0.0/modnet_v2.onnx"
+    },
+    {
+      "fileName": "hivision_modnet.onnx",
+      "role": "matting",
+      "displayName": "HivisionIDPhotos MODNet",
+      "priority": 1,
+      "resizeMode": "letterbox",
+      "normalization": "minus1_to_1",
+      "defaultBundled": true,
+      "license": "Apache-2.0",
+      "sha256": "7E0CB9A2A841B426DD0DAF1A788EC398DAB059BC039041D62B15636C0783BC56",
+      "downloadUrl": "https://huggingface.co/TheEeeeLin/HivisionIDPhotos_matting/resolve/034769305faf641ad94edfac654aba13be06e816/hivision_modnet.onnx"
+    },
+    {
+      "fileName": "birefnet-lite-matting-768-fp16.onnx",
+      "role": "matting",
+      "displayName": "BiRefNet Lite 768（细发）",
+      "priority": 2,
+      "resizeMode": "stretch",
+      "normalization": "imagenet",
+      "outputIsLogits": true,
+      "defaultBundled": true,
+      "license": "MIT",
+      "sha256": "5CD18865D2B548C41F2202B889AF4240490CCE72C63439691C66252FCAD01176",
+      "downloadUrl": "https://huggingface.co/FixedSeed/lattice-vision/resolve/05b78163725b64f55203468f26117cffd2d0de0b/birefnet-lite-matting-768-fp16.onnx"
+    },
+    {
+      "fileName": "face_detection_yunet_2023mar.onnx",
+      "role": "face_detection",
+      "displayName": "OpenCV YuNet 人脸检测",
+      "priority": 0,
+      "resizeMode": "letterbox",
+      "normalization": "zero_to_1",
+      "defaultBundled": true,
+      "license": "MIT",
+      "sha256": "8F2383E4DD3CFBB4553EA8718107FC0423210DC964F9F4280604804ED2552FA4",
+      "downloadUrl": "https://huggingface.co/opencv/face_detection_yunet/resolve/3cc26e7f1014a5ee5d74a42acee58bafc9d0a310/face_detection_yunet_2023mar.onnx"
+    },
+    {
+      "fileName": "face_landmarks.onnx",
+      "role": "face_landmarks",
+      "displayName": "人脸五官关键点精修模型",
+      "priority": 0,
+      "resizeMode": "stretch",
+      "normalization": "zero_to_1",
+      "defaultBundled": true,
+      "license": "Apache-2.0",
+      "sha256": "F38C3321CEFFBC9E95103480AD38CC3F52E7E1BDE2BCEE7CD9355D0B9138AC0C",
+      "downloadUrl": "https://huggingface.co/naklitechie/face-landmarks-onnx/resolve/575c33816c840c5b156398adb485e4f8d138adc2/face_landmarks.onnx"
+    }
+  ]
+}

@@ -1,0 +1,1532 @@
+﻿<Window x:Class="PhotoPrintStudio.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:PhotoPrintStudio.App.Controls"
+        xmlns:models="clr-namespace:PhotoPrintStudio.Core.Models;assembly=PhotoPrintStudio.Core"
+        Title="光影印坊"
+        Icon="pack://application:,,,/PhotoPrintStudio;component/Assets/app_icon.ico"
+        Width="1480" Height="900"
+        MinWidth="1120" MinHeight="700"
+        WindowStartupLocation="CenterScreen"
+        AllowDrop="True"
+        Drop="Window_Drop"
+        PreviewKeyDown="Window_PreviewKeyDown"
+        PreviewKeyUp="Window_PreviewKeyUp"
+        Background="{DynamicResource BrushBgCanvasWell}">
+
+    <Window.Resources>
+        <CollectionViewSource x:Key="TemplateGroups" Source="{Binding FilteredTemplates}">
+            <CollectionViewSource.GroupDescriptions>
+                <PropertyGroupDescription PropertyName="Scenario" />
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
+        <CollectionViewSource x:Key="PrinterGroups" Source="{Binding PrinterChoices}">
+            <CollectionViewSource.GroupDescriptions>
+                <PropertyGroupDescription PropertyName="Group" />
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
+    </Window.Resources>
+
+    <Grid KeyboardNavigation.TabNavigation="Cycle">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="26" />
+        </Grid.RowDefinitions>
+
+        <!-- ==================== 1. 顶部主工作流顶栏（极简三段式，零拥挤） ==================== -->
+        <Border Grid.Row="0" Background="{DynamicResource BrushBgHeader}"
+                BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="0,0,0,1" Padding="12,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 左侧：品牌 + 文件菜单 + 撤销重做 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="26" Height="26" CornerRadius="7" Background="{DynamicResource BrushAccent}" Margin="0,0,8,0">
+                        <Path Data="{StaticResource IconSparkle}" Width="14" Height="14" Stretch="Uniform"
+                              Stroke="White" StrokeThickness="1.6" StrokeLineJoin="Round" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="光影印坊" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" />
+                    <Border Background="{DynamicResource BrushAccentSoft}" CornerRadius="4" Padding="5,1" Margin="6,0,10,0" VerticalAlignment="Center">
+                        <TextBlock Text="Portable" Foreground="{DynamicResource BrushAccent}" FontSize="9.5" FontWeight="SemiBold" />
+                    </Border>
+
+                    <Border Width="1" Height="18" Background="{DynamicResource BrushBorderSubtle}" Margin="0,0,8,0" />
+
+                    <Button x:Name="FileMenuBtn" Style="{StaticResource GhostButton}" Click="FileMenuBtn_Click" ToolTip="导入照片 / 打开与保存工程 / 便携目录">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconFolder}" Style="{StaticResource VecIcon}" Margin="0,0,5,0" />
+                            <TextBlock Text="文件" VerticalAlignment="Center" />
+                            <Path Data="{StaticResource IconChevronDown}" Style="{StaticResource VecIcon}" Width="10" Height="10" Margin="4,1,0,0" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource GhostButton}" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" ToolTip="撤销 (Ctrl+Z)" Padding="6,5">
+                        <Path Data="{StaticResource IconUndo}" Style="{StaticResource VecIcon}" />
+                    </Button>
+                    <Button Style="{StaticResource GhostButton}" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" ToolTip="重做 (Ctrl+Y)" Padding="6,5">
+                        <Path Data="{StaticResource IconRedo}" Style="{StaticResource VecIcon}" />
+                    </Button>
+                </StackPanel>
+
+                <!-- 中央：打印场景 -->
+                <Border Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{DynamicResource BrushBgCard}" CornerRadius="8" Padding="3"
+                        BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="1">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton Style="{StaticResource ScenarioRadioButton}" Click="ScenarioDailyPrint_Click"
+                                     IsChecked="{Binding IsDailyPrintScenario, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconPrint}" Style="{StaticResource VecIcon}" Width="13" Height="13" Margin="0,0,5,0" />
+                                <TextBlock Text="日常打印" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Style="{StaticResource ScenarioRadioButton}" Click="ScenarioId_Click"
+                                     IsChecked="{Binding ActiveScenario, Converter={StaticResource EnumEquals}, ConverterParameter=IdPhoto, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconIdPhoto}" Style="{StaticResource VecIcon}" Width="13" Height="13" Margin="0,0,5,0" />
+                                <TextBlock Text="证件照" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton Style="{StaticResource ScenarioRadioButton}" Click="ScenarioPolaroid_Click"
+                                     IsChecked="{Binding ActiveScenario, Converter={StaticResource EnumEquals}, ConverterParameter=Polaroid, Mode=OneWay}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconPolaroid}" Style="{StaticResource VecIcon}" Width="13" Height="13" Margin="0,0,5,0" />
+                                <TextBlock Text="拍立得" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+                    </StackPanel>
+                </Border>
+
+                <!-- 右侧：联机监视 + 预检指示灯 + 设置 + 导出 + 打印 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="HotFolderPillBtn" Style="{StaticResource GhostButton}" Click="HotFolderWatch_Click" Margin="0,0,4,0"
+                            ToolTip="{Binding HotFolderStatusSummary}">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="7" Height="7" Margin="0,0,5,0" VerticalAlignment="Center">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Fill" Value="{DynamicResource BrushTextMuted}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsHotFolderWatching}" Value="True">
+                                                <Setter Property="Fill" Value="{DynamicResource BrushStatusOk}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
+                            <TextBlock Text="{Binding HotFolderBadgeText}" FontSize="11.5" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="PreflightPillBtn" Style="{StaticResource GhostButton}" Click="JumpToExportTab_Click" Margin="0,0,4,0" ToolTip="查看印前质量预检明细">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse x:Name="PreflightDot" Width="7" Height="7" Fill="{DynamicResource BrushStatusOk}" Margin="0,0,5,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="PreflightBadgeText" Text="预检通过" FontSize="11.5" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Content="设置" Style="{StaticResource GhostButton}" Click="Settings_Click" Margin="0,0,6,0" />
+
+                    <Button Style="{StaticResource ModernButton}" Click="QuickExportMenu_Click" Margin="0,0,6,0" ToolTip="导出 300/600 DPI 图片或 PDF (Ctrl+E)">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconExport}" Style="{StaticResource VecIcon}" Width="13" Height="13" Margin="0,0,5,0" />
+                            <TextBlock Text="导出" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button Style="{StaticResource PrimaryButton}" Command="{Binding PrintActiveSheetCommand}" ToolTip="打印当前页 (Ctrl+P)">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource IconPrint}" Style="{StaticResource VecIcon}" Width="13" Height="13" Margin="0,0,5,0" />
+                            <TextBlock Text="打印" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ==================== 2. 主体三栏 Studio 工作台 ==================== -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="284" MinWidth="240" MaxWidth="370" />
+                <ColumnDefinition Width="4" />
+                <ColumnDefinition Width="*" MinWidth="460" />
+                <ColumnDefinition Width="4" />
+                <ColumnDefinition Width="348" MinWidth="305" MaxWidth="460" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ========== 左栏：专注「模板选择与版式几何」（自适应收缩无死白） ========== -->
+            <Border Grid.Column="0" Background="{DynamicResource BrushBgPanel}"
+                    BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="0,0,1,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- 上半部：自适应高度可视化模板库（少模板时不留巨型空白） -->
+                    <DockPanel Grid.Row="0" Margin="10,10,10,8" MaxHeight="360">
+                        <DockPanel DockPanel.Dock="Top" Margin="2,0,0,8">
+                            <TextBlock Text="排版模板" FontWeight="SemiBold" FontSize="12.5" VerticalAlignment="Center" />
+                            <Button Style="{StaticResource GhostButton}" Padding="6,2" DockPanel.Dock="Right"
+                                    Click="OpenCustomTemplateDialog_Click" ToolTip="将当前参数另存为新模板">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconPlus}" Style="{StaticResource VecIcon}" Width="11" Height="11" Margin="0,0,4,0" />
+                                    <TextBlock Text="自定义" FontSize="11" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </DockPanel>
+
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,3"
+                                    Visibility="{Binding IsDailyPrintScenario, Converter={StaticResource BoolToVis}}">
+                            <Button Content="单张照片" Style="{StaticResource GhostButton}" Padding="7,4"
+                                    Click="JumpToTemplateGroup_Click" Tag="{x:Static models:LayoutScenario.SinglePhoto}" />
+                            <Button Content="六寸二合一" Style="{StaticResource GhostButton}" Padding="7,4"
+                                    Click="JumpToTemplateGroup_Click" Tag="{x:Static models:LayoutScenario.SixInchTwoInOne}" />
+                            <Button Content="自由网格" Style="{StaticResource GhostButton}" Padding="7,4"
+                                    Click="JumpToTemplateGroup_Click" Tag="{x:Static models:LayoutScenario.FreeGrid}" />
+                        </StackPanel>
+
+                        <ListBox x:Name="TemplatesList"
+                                 ItemsSource="{Binding Source={StaticResource TemplateGroups}}"
+                                 SelectedItem="{Binding SelectedTemplate, Mode=TwoWay}"
+                                 SelectionChanged="TemplatesList_SelectionChanged"
+                                 Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.GroupStyle>
+                                <GroupStyle>
+                                    <GroupStyle.HeaderTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Foreground="{DynamicResource BrushTextSecondary}" FontWeight="SemiBold"
+                                                       FontSize="11.5" Margin="2,8,0,5">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Name}" Value="{x:Static models:LayoutScenario.SinglePhoto}">
+                                                                <Setter Property="Text" Value="单张照片" />
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Name}" Value="{x:Static models:LayoutScenario.SixInchTwoInOne}">
+                                                                <Setter Property="Text" Value="六寸二合一" />
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Name}" Value="{x:Static models:LayoutScenario.FreeGrid}">
+                                                                <Setter Property="Text" Value="自由网格" />
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </DataTemplate>
+                                    </GroupStyle.HeaderTemplate>
+                                </GroupStyle>
+                            </ListBox.GroupStyle>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0,0,0,5" />
+                                    <Setter Property="Cursor" Value="Hand" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="card" Background="{DynamicResource BrushBgCard}"
+                                                        BorderBrush="{DynamicResource BrushBorderSubtle}"
+                                                        BorderThickness="1" CornerRadius="7" Padding="8,6">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="card" Property="Background" Value="{DynamicResource BrushBgHover}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="card" Property="Background" Value="{DynamicResource BrushAccentSoft}" />
+                                                        <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="46" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <controls:TemplateGlyphControl Grid.Column="0" Template="{Binding}" Width="44" Height="32" />
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11.5" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,0,0,0"
+                                                    Visibility="{Binding IsBuiltIn, Converter={StaticResource InverseBoolToVis}}">
+                                            <Button Style="{StaticResource GhostButton}" Padding="4" ToolTip="重命名模板"
+                                                    Tag="{Binding}" Click="RenameTemplate_Click">
+                                                <Path Data="{StaticResource IconEdit}" Style="{StaticResource VecIcon}" Width="11" Height="11" />
+                                            </Button>
+                                            <Button Style="{StaticResource GhostButton}" Padding="4" ToolTip="删除自定义模板"
+                                                    Tag="{Binding}" Click="DeleteTemplate_Click">
+                                                <Path Data="{StaticResource IconTrash}" Style="{StaticResource VecIcon}" Width="11" Height="11" />
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+
+                    <!-- 下半部：纸张规格与精确物理几何参数 -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                  BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="0,1,0,0">
+                        <Border BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="0,1,0,0" Padding="10,10,10,12">
+                            <StackPanel>
+                                <TextBlock Text="纸张与版式几何" FontWeight="SemiBold" FontSize="12" Margin="2,0,0,8" />
+                                <Grid Margin="0,0,0,7">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox Grid.Column="0" ItemsSource="{Binding PaperSizes}" SelectedItem="{Binding SelectedPaper, Mode=TwoWay}" DisplayMemberPath="Name" />
+                                    <Button Grid.Column="1" Style="{StaticResource ModernButton}" Padding="6,0" Height="26" Margin="4,0,0,0"
+                                            ToolTip="新建自定义物理相纸尺寸 (mm)" Click="AddCustomPaper_Click">
+                                        <Path Data="{StaticResource IconPlus}" Style="{StaticResource VecIcon}" Width="11" Height="11" />
+                                    </Button>
+                                    <Button Grid.Column="2" Style="{StaticResource GhostButton}" Padding="5,0" Height="26" Margin="2,0,0,0"
+                                            ToolTip="删除当前自定义相纸" Visibility="{Binding IsCustomPaperSelected, Converter={StaticResource BoolToVis}}"
+                                            Click="DeleteCustomPaper_Click">
+                                        <Path Data="{StaticResource IconTrash}" Style="{StaticResource VecIcon}" Width="11" Height="11" />
+                                    </Button>
+                                </Grid>
+
+                                <CheckBox Content="纸张尺寸应用到全部页" IsChecked="{Binding ApplySizeToAllPages}"
+                                          Visibility="{Binding HasMultiplePages, Converter={StaticResource BoolToVis}}"
+                                          ToolTip="改变纸张或日常单张打印尺寸时，更新全部页面并保留照片。"
+                                          Margin="0,0,0,7" />
+
+                                <Grid Margin="0,0,0,7">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox Grid.Column="0" Content="横向纸张" IsChecked="{Binding IsLandscape}" />
+                                    <CheckBox Grid.Column="1" Content="输出中线标记" IsChecked="{Binding ShowCenterFoldTick}" />
+                                </Grid>
+
+                                <!-- 证件照规格选择器 -->
+                                <StackPanel Visibility="{Binding ActiveScenario, Converter={StaticResource EnumToVis}, ConverterParameter=IdPhoto}" Margin="0,0,0,6">
+                                    <ComboBox ItemsSource="{Binding IdPhotoSpecs}" SelectedItem="{Binding SelectedIdSpec, Mode=TwoWay}" DisplayMemberPath="Name" ToolTip="切换证件照物理规格" />
+                                </StackPanel>
+
+                                <!-- 拍立得型号选择器 -->
+                                <StackPanel Visibility="{Binding ActiveScenario, Converter={StaticResource EnumToVis}, ConverterParameter=Polaroid}" Margin="0,0,0,6">
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ComboBox Grid.Column="0" ItemsSource="{Binding PolaroidSpecs}" SelectedItem="{Binding SelectedPolaroidSpec, Mode=TwoWay}" DisplayMemberPath="Name" ToolTip="切换实体拍立得相纸尺寸" />
+                                        <Button Grid.Column="1" Style="{StaticResource ModernButton}" Padding="6,0" Height="26" Margin="4,0,0,0"
+                                                ToolTip="新建自定义拍立得外框尺寸与四周边框留白 (mm)" Click="AddCustomPolaroid_Click">
+                                            <Path Data="{StaticResource IconPlus}" Style="{StaticResource VecIcon}" Width="11" Height="11" />
+                                        </Button>
+                                        <Button Grid.Column="2" Style="{StaticResource GhostButton}" Padding="5,0" Height="26" Margin="2,0,0,0"
+                                                ToolTip="删除当前自定义拍立得尺寸" Visibility="{Binding IsCustomPolaroidSelected, Converter={StaticResource BoolToVis}}"
+                                                Click="DeleteCustomPolaroid_Click">
+                                            <Path Data="{StaticResource IconTrash}" Style="{StaticResource VecIcon}" Width="11" Height="11" />
+                                        </Button>
+                                    </Grid>
+                                    <CheckBox Content="原尺寸放不下时缩为一张" IsChecked="{Binding PolaroidSafeFit}"
+                                              Visibility="{Binding IsAutomaticPolaroidLayout, Converter={StaticResource BoolToVis}}" />
+                                </StackPanel>
+
+                                <!-- 自由网格行列数 -->
+                                <StackPanel Visibility="{Binding CanEditGridSize, Converter={StaticResource BoolToVis}}" Margin="0,0,0,4">
+                                    <controls:StudioSliderRow LabelWidth="72" Title="网格行数" Minimum="1" Maximum="10" Step="1" DefaultValue="2" Value="{Binding CustomGridRows}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                    <controls:StudioSliderRow LabelWidth="72" Title="网格列数" Minimum="1" Maximum="10" Step="1" DefaultValue="2" Value="{Binding CustomGridCols}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                </StackPanel>
+
+                                <controls:StudioSliderRow LabelWidth="72" Title="外边距 mm" Minimum="0" Maximum="25" Step="0.5" DefaultValue="{Binding SelectedTemplate.DefaultMarginMm, FallbackValue=5}" ValueFormat="0.0" Value="{Binding LayoutMarginMm}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                <controls:StudioSliderRow LabelWidth="72" Title="格间距 mm" Minimum="0" Maximum="20" Step="0.5" DefaultValue="4" ValueFormat="0.0" Value="{Binding LayoutGapMm}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted"
+                                                          Visibility="{Binding IsSinglePhotoLayout, Converter={StaticResource InverseBoolToVis}}" />
+                                <controls:StudioSliderRow LabelWidth="72" Title="出血 mm" Minimum="0" Maximum="3" Step="0.5" DefaultValue="0" ValueFormat="0.0" Value="{Binding LayoutBleedMm}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+
+                                <Button Style="{StaticResource ModernButton}" Content="一键取消边框（减少裁切刀数）"
+                                        Command="{Binding OneClickRemoveBordersCommand}"
+                                        HorizontalAlignment="Stretch" Margin="0,5,0,4" Height="30"
+                                        ToolTip="将外边距、格间距和出血归零，并紧贴纸张左上边排布以减少裁切刀数（Ctrl+Z 可撤销）" />
+                                <CheckBox Content="紧贴纸边紧凑排布（省去外边裁切）"
+                                          IsChecked="{Binding AlignFlushToEdge, Mode=TwoWay}"
+                                          Visibility="{Binding IsSinglePhotoLayout, Converter={StaticResource InverseBoolToVis}}"
+                                          Margin="0,2,0,4" />
+
+                                <Grid Margin="0,5,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="72" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="输出裁切标记" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11.5" VerticalAlignment="Center" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding CropMarkStyles}" DisplayMemberPath="Value" SelectedValuePath="Key"
+                                              SelectedValue="{Binding SelectedCropMarkStyle, Mode=TwoWay}"
+                                              ToolTip="会写入导出文件和打印成品。白底裁切角标在照片角落外侧标出切点。" />
+                                </Grid>
+                                <Button Content="关闭本页所有输出标记" Style="{StaticResource GhostButton}"
+                                        Command="{Binding ClearOutputMarksCommand}" HorizontalAlignment="Left" />
+
+                                <!-- 排布统计摘要移入左栏，释放底部空间 -->
+                                <Border Background="{DynamicResource BrushBgCard}" CornerRadius="6" Padding="8,6"
+                                        BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="1">
+                                    <TextBlock Text="{Binding AutoPackInfoText}" Foreground="{DynamicResource BrushTextSecondary}"
+                                               FontSize="10.5" TextWrapping="Wrap" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE" />
+
+            <!-- ========== 中央主视口：视角栏 + 编辑上下文 HUD + 标尺画布 + 底部胶片条 ========== -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="38" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="6" />
+                    <RowDefinition x:Name="AssetTrayRow" Height="150" MinHeight="48" MaxHeight="340" />
+                </Grid.RowDefinitions>
+
+                <!-- 1) 极简画布视角控制栏 -->
+                <Border Grid.Row="0" Background="{DynamicResource BrushBgPanel}"
+                        BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="0,0,0,1" Padding="10,0">
+                    <DockPanel LastChildFill="False">
+                        <!-- 视图模式切换 -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Left">
+                            <ToggleButton Style="{StaticResource PillToggleButton}" Margin="0,0,2,0"
+                                          IsChecked="{Binding ViewMode, Converter={StaticResource EnumEquals}, ConverterParameter=SheetOverview, Mode=OneWay}"
+                                          Click="ViewModeSheet_Click" ToolTip="排版总览（画布中按 G）">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconGrid}" Style="{StaticResource VecIcon}" Width="12" Height="12" Margin="0,0,5,0" />
+                                    <TextBlock Text="排版总览" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+                            <ToggleButton Style="{StaticResource PillToggleButton}" Margin="0,0,2,0"
+                                          IsChecked="{Binding ViewMode, Converter={StaticResource EnumEquals}, ConverterParameter=SingleRetouchCrop, Mode=OneWay}"
+                                          Click="ViewModeSingle_Click" ToolTip="单图裁剪（画布中按 R）">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconCrop}" Style="{StaticResource VecIcon}" Width="12" Height="12" Margin="0,0,5,0" />
+                                    <TextBlock Text="单图裁剪" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+                            <ToggleButton Style="{StaticResource PillToggleButton}" Margin="0,0,8,0"
+                                          IsChecked="{Binding ViewMode, Converter={StaticResource EnumEquals}, ConverterParameter=SplitCompare, Mode=OneWay}"
+                                          Click="ViewModeSplit_Click" ToolTip="分屏对比（画布中按 Y 开关）">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconCompare}" Style="{StaticResource VecIcon}" Width="12" Height="12" Margin="0,0,5,0" />
+                                    <TextBlock Text="分屏对比" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+
+                            <Border Width="1" Height="16" Background="{DynamicResource BrushBorderSubtle}" Margin="0,0,8,0" />
+
+                            <Button x:Name="HoldCompareBtn" Style="{StaticResource ModernButton}" Padding="9,4" Margin="0,0,4,0"
+                                    ToolTip="按住或长按键盘空格键 (Space) 对比原图"
+                                    PreviewMouseLeftButtonDown="HoldCompareBtn_Down"
+                                    PreviewMouseLeftButtonUp="HoldCompareBtn_Up"
+                                    MouseLeave="HoldCompareBtn_Leave">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconEye}" Style="{StaticResource VecIcon}" Width="12" Height="12" Margin="0,0,5,0" />
+                                    <TextBlock Text="对比原图" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <ToggleButton Style="{StaticResource PillToggleButton}" Margin="0,0,4,0"
+                                          ToolTip="两点拉直（画布中按 Shift+T），点击水平线两端"
+                                          IsChecked="{Binding IsTwoPointStraightenActive, Mode=OneWay}"
+                                          Command="{Binding ToggleTwoPointStraightenCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconStraighten}" Style="{StaticResource VecIcon}" Width="12" Height="12" Margin="0,0,5,0" />
+                                    <TextBlock Text="两点拉直" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+
+                            <Button Style="{StaticResource ModernButton}" Padding="9,4" Margin="0,0,4,0"
+                                    ToolTip="优化当前照片的裁剪，也可取消计算或还原本次构图"
+                                    IsEnabled="{Binding CanAutoFramePhoto}"
+                                    Command="{Binding AutoFrameWithFaceCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconFaceDetect}" Style="{StaticResource VecIcon}" Width="12" Height="12" Margin="0,0,5,0" />
+                                    <TextBlock Text="{Binding AutoFrameActionText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+
+                            <ToggleButton Style="{StaticResource PillToggleButton}" Padding="9,4"
+                                          ToolTip="自动校正白平衡、均衡脸部光线并优化肤质。再次点击可关闭。"
+                                          IsEnabled="{Binding HasSelectedAsset}"
+                                          IsChecked="{Binding EditStudioPortraitEnhance, Mode=OneWay}"
+                                          Command="{Binding ToggleStudioPortraitEnhanceCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource IconSparkle}" Style="{StaticResource VecIcon}" Width="12" Height="12" Margin="0,0,5,0" />
+                                    <TextBlock Text="{Binding StudioEnhanceActionText}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+                        </StackPanel>
+
+                        <!-- 右侧：视图叠加弹出菜单 + 缩放控件 -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" DockPanel.Dock="Right">
+                            <Button Content="预览设置" Style="{StaticResource GhostButton}" Click="PreviewSettings_Click"
+                                    Margin="0,0,4,0" ToolTip="预览设置（Ctrl+Shift+逗号）" />
+
+                            <Border Width="1" Height="16" Background="{DynamicResource BrushBorderSubtle}" Margin="2,0,6,0" />
+
+                            <Button Content="－" Style="{StaticResource GhostButton}" Padding="6,2" Click="ZoomOut_Click" ToolTip="缩小画布（Ctrl+-）" />
+                            <Button Style="{StaticResource GhostButton}" Click="ZoomFit_Click" Padding="3,2"
+                                    AutomationProperties.Name="适应窗口" ToolTip="适应窗口（Ctrl+0）">
+                                <TextBlock x:Name="ZoomPercentText" Text="适应" FontSize="11" MinWidth="32" TextAlignment="Center" />
+                            </Button>
+                            <Button Content="＋" Style="{StaticResource GhostButton}" Padding="6,2" Click="ZoomIn_Click" ToolTip="放大画布（Ctrl+=）" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- 2) 当前编辑对象上下文 HUD + 工具指引横幅 -->
+                <StackPanel Grid.Row="1">
+                    <Border Background="{DynamicResource BrushBgHeader}" BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="0,0,0,1" Padding="12,5">
+                        <DockPanel>
+                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+                                <Ellipse Width="6" Height="6" Fill="{DynamicResource BrushAccent}" Margin="0,0,7,0" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding ActiveEditTargetTitle}" FontWeight="SemiBold" FontSize="11.5" VerticalAlignment="Center" />
+                                <TextBlock Text="，" Foreground="{DynamicResource BrushTextMuted}" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding ActiveEditTargetMeta}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" VerticalAlignment="Center" />
+
+                                <Button Content="放入当前格位" Style="{StaticResource PrimaryButton}" Padding="8,2" FontSize="10.5" Margin="10,0,0,0"
+                                        Visibility="{Binding IsEditingUnassignedAsset, Converter={StaticResource BoolToVis}}"
+                                        Command="{Binding AssignSelectedAssetToSelectedSlotCommand}" />
+
+                                <Button Content="拆分独立微调" Style="{StaticResource ModernButton}" Padding="8,2" FontSize="10.5" Margin="10,0,0,0"
+                                        ToolTip="为当前选中格位创建独立照片副本，修改调色或裁剪时不再同步影响其他格位"
+                                        Visibility="{Binding CanForkIndependentAsset, Converter={StaticResource BoolToVis}}"
+                                        Command="{Binding ForkIndependentAssetForSelectedSlotCommand}" />
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                        Visibility="{Binding HasSelectedAsset, Converter={StaticResource BoolToVis}}">
+                                <Button Style="{StaticResource GhostButton}" Padding="5,3" ToolTip="逆时针旋转 90°（Ctrl+[）" Command="{Binding RotateQuarterLeftCommand}">
+                                    <Path Data="{StaticResource IconRotateLeft}" Style="{StaticResource VecIcon}" Width="12" Height="12" />
+                                </Button>
+                                <Button Style="{StaticResource GhostButton}" Padding="5,3" ToolTip="顺时针旋转 90°（Ctrl+]）" Command="{Binding RotateQuarterRightCommand}">
+                                    <Path Data="{StaticResource IconRotateRight}" Style="{StaticResource VecIcon}" Width="12" Height="12" />
+                                </Button>
+                                <Button Style="{StaticResource GhostButton}" Padding="5,3" ToolTip="水平镜像" Command="{Binding ToggleFlipHorizontalCommand}">
+                                    <Path Data="{StaticResource IconFlipH}" Style="{StaticResource VecIcon}" Width="12" Height="12" />
+                                </Button>
+                                <Button Style="{StaticResource GhostButton}" Padding="5,3" ToolTip="清空当前格位" Command="{Binding ClearSelectedSlotCommand}"
+                                        Visibility="{Binding HasSelectedSlot, Converter={StaticResource BoolToVis}}">
+                                    <Path Data="{StaticResource IconTrash}" Style="{StaticResource VecIcon}" Width="12" Height="12" />
+                                </Button>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- 交互模式实时指引条（仅裁剪/对比/两点拉直时显示） -->
+                    <Border Background="{DynamicResource BrushAccentSoft}" BorderBrush="{DynamicResource BrushAccent}" BorderThickness="0,0,0,1" Padding="12,4"
+                            Visibility="{Binding HasActiveToolBanner, Converter={StaticResource BoolToVis}}">
+                        <DockPanel>
+                            <TextBlock Text="{Binding ActiveToolBannerText}" Foreground="{DynamicResource BrushAccent}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <Button Content="返回排版总览" Style="{StaticResource GhostButton}" Padding="6,1" FontSize="10.5" DockPanel.Dock="Right"
+                                    Click="ViewModeSheet_Click"
+                                    Visibility="{Binding IsHoldingCompare, Converter={StaticResource InverseBoolToVis}}" />
+                        </DockPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- 3) 物理毫米标尺 + 画布视口 + 悬浮引导/Toast -->
+                <Grid Grid.Row="2" x:Name="ViewportHost" Focusable="True" SizeChanged="ViewportHost_SizeChanged"
+                      PreviewMouseWheel="ViewportHost_PreviewMouseWheel">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border x:Name="RulerCornerBox" Grid.Row="0" Grid.Column="0" Width="22" Height="22"
+                            Background="{DynamicResource BrushRulerBg}"
+                            BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="0,0,1,1"
+                            Visibility="{Binding ShowRulers, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="mm" FontSize="8.5" Foreground="{DynamicResource BrushTextMuted}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+
+                    <controls:PhysicalRulerControl x:Name="TopRuler" Grid.Row="0" Grid.Column="1" Height="22"
+                                                   IsVertical="False"
+                                                   Visibility="{Binding ShowRulers, Converter={StaticResource BoolToVis}}" />
+
+                    <controls:PhysicalRulerControl x:Name="LeftRuler" Grid.Row="1" Grid.Column="0" Width="22"
+                                                   IsVertical="True"
+                                                   Visibility="{Binding ShowRulers, Converter={StaticResource BoolToVis}}" />
+
+                    <ScrollViewer x:Name="CanvasScroller" Grid.Row="1" Grid.Column="1"
+                                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                                  Background="{DynamicResource BrushBgCanvasWell}"
+                                  ScrollChanged="CanvasScroller_ScrollChanged">
+                        <Grid HorizontalAlignment="Center" VerticalAlignment="Center" Margin="26">
+                            <Border x:Name="PaperShadowBorder" Background="White" CornerRadius="2"
+                                    UseLayoutRounding="True" SnapsToDevicePixels="True"
+                                    AllowDrop="True" DragOver="CanvasImage_DragOver" Drop="CanvasImage_Drop">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="Black" BlurRadius="24" ShadowDepth="5" Opacity="0.38" />
+                                </Border.Effect>
+                                <Grid>
+                                    <Image x:Name="CanvasPreviewImage"
+                                           Source="{Binding CanvasPreviewBitmap}"
+                                           Stretch="Fill"
+                                           UseLayoutRounding="True"
+                                           SnapsToDevicePixels="True"
+                                           RenderOptions.BitmapScalingMode="HighQuality"
+                                           MouseLeftButtonDown="CanvasPreviewImage_MouseLeftButtonDown"
+                                           MouseMove="CanvasPreviewImage_MouseMove"
+                                           MouseLeave="CanvasPreviewImage_MouseLeave"
+                                           LostMouseCapture="CanvasPreviewImage_LostMouseCapture"
+                                           MouseLeftButtonUp="CanvasPreviewImage_MouseLeftButtonUp"
+                                           MouseRightButtonUp="CanvasPreviewImage_MouseRightButtonUp">
+                                        <Image.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="进入单图裁剪精修" Click="CtxSingleEdit_Click" />
+                                                <MenuItem Header="将当前照片填满本页全部格位" Command="{Binding FillAllSlotsWithSelectedAssetCommand}" />
+                                                <Separator />
+                                                <MenuItem Header="旋转照片以适配格位方向" Command="{Binding AutoOrientPhotoToSlotCommand}" />
+                                                <MenuItem Header="顺时针旋转照片 90°" Command="{Binding RotateQuarterRightCommand}" />
+                                                <MenuItem Header="水平镜像翻转" Command="{Binding ToggleFlipHorizontalCommand}" />
+                                                <MenuItem Header="复制当前照片调色参数" Command="{Binding CopyColorParametersCommand}" />
+                                                <MenuItem Header="粘贴调色参数到此照片" Command="{Binding PasteColorToSelectedCommand}" IsEnabled="{Binding HasCopiedColorEdit}" />
+                                                <Separator />
+                                                <MenuItem Header="清空此格位" Command="{Binding ClearSelectedSlotCommand}" />
+                                            </ContextMenu>
+                                        </Image.ContextMenu>
+                                    </Image>
+                                    <Canvas x:Name="OverlayMarksCanvas" IsHitTestVisible="False" />
+                                </Grid>
+                            </Border>
+
+                            <!-- 空素材欢迎引导卡 -->
+                            <Border VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,16"
+                                    Background="{DynamicResource BrushBgHud}"
+                                    BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1"
+                                    CornerRadius="10" Padding="14,9"
+                                    Visibility="{Binding Assets.Count, Converter={StaticResource IntZeroToVis}}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="直接拖入照片到画布，或：" VerticalAlignment="Center" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,10,0" />
+                                    <Button Content="选择本地照片" Style="{StaticResource PrimaryButton}" Padding="10,4" Click="ImportPhotos_Click" Margin="0,0,6,0" />
+                                    <Button Content="载入测试样片" Style="{StaticResource ModernButton}" Padding="10,4" Command="{Binding LoadSamplePhotosCommand}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </ScrollViewer>
+
+                    <!-- 优雅的非阻塞 Toast 反馈胶囊 -->
+                    <Border Grid.Row="1" Grid.Column="1" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,14"
+                            Background="{DynamicResource BrushBgHud}" BorderBrush="{DynamicResource BrushAccent}" BorderThickness="1"
+                            CornerRadius="16" Padding="14,6" IsHitTestVisible="False"
+                            Visibility="{Binding IsToastVisible, Converter={StaticResource BoolToVis}}">
+                        <Border.Effect>
+                            <DropShadowEffect Color="Black" BlurRadius="12" ShadowDepth="2" Opacity="0.3" />
+                        </Border.Effect>
+                        <TextBlock Text="{Binding ToastMessage}" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" />
+                    </Border>
+                </Grid>
+
+                <!-- 4) 底部照片胶片带 + 多页控制（释放左侧空间，素材横向大览直观拖放） -->
+                <GridSplitter Grid.Row="3" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                              ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Background="{DynamicResource BrushBorderSubtle}"
+                              ToolTip="拖动调整素材池高度" />
+                <Border Grid.Row="4" Background="{DynamicResource BrushBgPanel}"
+                        BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="0,1,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- 胶片带顶条：素材操作 + 多页切换 -->
+                        <Border Grid.Row="0" Background="{DynamicResource BrushBgHeader}" BorderBrush="{DynamicResource BrushBorderSubtle}"
+                                BorderThickness="0,0,0,1" Padding="8,4" SizeChanged="AssetToolbar_SizeChanged">
+                            <WrapPanel VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,6,0">
+                                    <RadioButton Content="导入照片" Style="{StaticResource ScenarioRadioButton}" IsChecked="True"
+                                                 GroupName="TrayView" Click="TrayPhotos_Click" />
+                                    <RadioButton Content="打印页面" Style="{StaticResource ScenarioRadioButton}"
+                                                 GroupName="TrayView" Click="TrayPages_Click" />
+                                </StackPanel>
+                                <StackPanel x:Name="AssetActions" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Content="＋ 导入" Style="{StaticResource GhostButton}" MinHeight="34" Padding="8,4" Click="ImportPhotos_Click" />
+                                    <TextBlock Text="{Binding Assets.Count, StringFormat={}{0} 张}" VerticalAlignment="Center" Margin="3,0" />
+                                    <TextBlock Text="{Binding UnplacedPhotoCount, StringFormat=待排 {0} 张}" VerticalAlignment="Center" Margin="3,0" />
+                                    <Button x:Name="SelectedPhotosButton" Content="已选 0 张" Style="{StaticResource GhostButton}" Click="SelectedPhotos_Click"
+                                            MinHeight="34" IsEnabled="False" ToolTip="拖动空白处框选，Ctrl+A 全选，Delete 移除" />
+                                    <Button Content="更多" Style="{StaticResource GhostButton}" MinHeight="34" Click="AssetMore_Click" />
+                                </StackPanel>
+
+                                <!-- 多页队列分页器 -->
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,2,0,2">
+                                    <Button Content="‹ 上一页" Style="{StaticResource ModernButton}" MinWidth="74" MinHeight="36"
+                                            Command="{Binding PrevSheetCommand}" IsEnabled="{Binding CanGoToPreviousPage}" ToolTip="上一页（画布上按 ←，或按 Page Up）" />
+                                    <Button Style="{StaticResource GhostButton}" MinWidth="76" MinHeight="36" Padding="8,4" Click="JumpToPage_Click"
+                                            IsEnabled="{Binding HasMultiplePages}" ToolTip="跳转到指定页面（Ctrl+G）">
+                                        <TextBlock>
+                                            <Run Text="{Binding ActiveSheet.SheetName, FallbackValue='第 1 页', Mode=OneWay}" />
+                                            <Run Text=" / " />
+                                            <Run Text="{Binding Sheets.Count, Mode=OneWay}" />
+                                        </TextBlock>
+                                    </Button>
+                                    <Button Content="下一页 ›" Style="{StaticResource ModernButton}" MinWidth="74" MinHeight="36"
+                                            Command="{Binding NextSheetCommand}" IsEnabled="{Binding CanGoToNextPage}" ToolTip="下一页（画布上按 →，或按 Page Down）" />
+                                    <Border Width="1" Height="12" Background="{DynamicResource BrushBorderSubtle}" Margin="4,0" />
+                                    <Button Content="页面操作" Style="{StaticResource GhostButton}" MinHeight="36" Click="PageMore_Click" />
+                                </StackPanel>
+                            </WrapPanel>
+                        </Border>
+
+                        <Grid x:Name="TrayContent" Grid.Row="1">
+                        <controls:AssetTrayListBox x:Name="AssetsList"
+                                 ItemsSource="{Binding Assets}"
+                                 SelectionMode="Extended"
+                                 SelectionChanged="AssetsList_SelectionChanged"
+                                 PreviewMouseWheel="AssetsList_PreviewMouseWheel"
+                                 PreviewMouseLeftButtonDown="AssetsList_PreviewMouseLeftButtonDown"
+                                 PreviewMouseMove="AssetsList_PreviewMouseMove"
+                                 PreviewMouseLeftButtonUp="AssetsList_PreviewMouseLeftButtonUp"
+                                 LostMouseCapture="AssetsList_LostMouseCapture"
+                                 VirtualizingPanel.ScrollUnit="Pixel"
+                                 Background="Transparent" BorderThickness="0" Padding="8,4"
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0,0,8,0" />
+                                    <Setter Property="Cursor" Value="Hand" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="card" Background="{DynamicResource BrushBgCard}"
+                                                        BorderBrush="{DynamicResource BrushBorderSubtle}"
+                                                        BorderThickness="1.2" CornerRadius="7" Padding="5" Width="192">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="card" Property="Background" Value="{DynamicResource BrushBgHover}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="card" Property="Background" Value="{DynamicResource BrushAccentSoft}" />
+                                                        <Setter TargetName="card" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ToolTip="拖到画布可放入格位，在卡片上按住 Alt 拖动可框选">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="62" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Width="62" Height="62" CornerRadius="5" ClipToBounds="True"
+                                                Background="{DynamicResource BrushBgInput}">
+                                            <Grid>
+                                                <Image Source="{Binding Thumbnail}" Stretch="UniformToFill" />
+                                                <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="3"
+                                                        Background="#CC0F172A" CornerRadius="8" Padding="5,1">
+                                                    <TextBlock Text="{Binding UsageCount, StringFormat=×{0}}" Foreground="White" FontSize="9.5" FontWeight="SemiBold" />
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="11" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding ResolutionText}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10" Margin="0,3,0,0" />
+                                            <TextBlock Text="{Binding MetaText}" Foreground="{DynamicResource BrushTextMuted}" FontSize="9.5" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </controls:AssetTrayListBox>
+                        <controls:AssetTrayListBox x:Name="PagePreviewList" Visibility="Collapsed" ItemsSource="{Binding Sheets}"
+                                 SelectionMode="Extended" SelectionChanged="PagePreviewList_SelectionChanged"
+                                 PreviewMouseLeftButtonDown="PagePreviewList_PreviewMouseLeftButtonDown"
+                                 PreviewMouseMove="PagePreviewList_PreviewMouseMove"
+                                 PreviewMouseLeftButtonUp="PagePreviewList_PreviewMouseLeftButtonUp"
+                                 LostMouseCapture="PagePreviewList_LostMouseCapture" PreviewMouseWheel="TrayList_PreviewMouseWheel"
+                                 Background="Transparent" BorderThickness="0" Padding="8,4"
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 VirtualizingPanel.ScrollUnit="Pixel" VirtualizingPanel.CacheLength="0">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Margin" Value="0,0,8,0" />
+                                    <Setter Property="Cursor" Value="Hand" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="pageCard" Background="{DynamicResource BrushBgCard}"
+                                                        BorderBrush="{DynamicResource BrushBorderSubtle}"
+                                                        BorderThickness="1" CornerRadius="6" Padding="4">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="pageCard" Property="Background" Value="{DynamicResource BrushBgHover}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="pageCard" Property="Background" Value="{DynamicResource BrushAccentSoft}" />
+                                                        <Setter TargetName="pageCard" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Width="132" MinHeight="68" ToolTip="点击查看排版，拖动框选，Ctrl+A 全选，Delete 删除">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="*" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Border Background="{DynamicResource BrushBgInput}" CornerRadius="4" ClipToBounds="True">
+                                            <Image Stretch="Uniform" MaxHeight="180" Loaded="PagePreviewImage_Loaded" Unloaded="PagePreviewImage_Unloaded" />
+                                        </Border>
+                                        <TextBlock Grid.Row="1" Text="{Binding SheetName}" FontSize="11" HorizontalAlignment="Center" Margin="0,3,0,0"
+                                                   Loaded="PagePreviewLabel_Loaded" Unloaded="PagePreviewLabel_Unloaded" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </controls:AssetTrayListBox>
+                        <Canvas x:Name="TraySelectionCanvas" IsHitTestVisible="False" ClipToBounds="True">
+                            <Rectangle x:Name="TraySelectionRect" Visibility="Collapsed" Stroke="{DynamicResource BrushAccent}"
+                                       StrokeThickness="1" StrokeDashArray="4,3" />
+                        </Canvas>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <GridSplitter Grid.Column="3" Width="4" HorizontalAlignment="Stretch" Background="Transparent" Cursor="SizeWE" />
+
+            <!-- ========== 右栏：专注「调色修图 / 卡片装饰 / 打印导出」 ========== -->
+            <Border x:Name="RightInspector" Grid.Column="4" Background="{DynamicResource BrushBgPanel}"
+                    BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="1,0,0,0">
+                <TabControl Style="{StaticResource StudioTabControl}" SelectedIndex="{Binding RightTabIndex, Mode=TwoWay}">
+
+                    <!-- ==================== TAB 1：调色修图（零长滚动分段工作区） ==================== -->
+                    <TabItem Header="调色修图" Style="{StaticResource StudioTabItem}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <!-- 固定顶部区：直方图 + 复制粘贴预设 + 3个二级子页切换 -->
+                            <StackPanel Grid.Row="0" Margin="10,0,10,4">
+                                <controls:HistogramControl x:Name="HistogramCtrl" Height="62" Histogram="{Binding ActiveHistogram}" Margin="0,0,0,4" />
+
+                                <Grid Margin="0,0,0,6">
+                                    <TextBlock Text="{Binding ClippingWarningText}" FontSize="10.5" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button Style="{StaticResource GhostButton}" Padding="5,2" ToolTip="复制当前照片调色参数 (Ctrl+C)" Command="{Binding CopyColorParametersCommand}">
+                                            <Path Data="{StaticResource IconCopy}" Style="{StaticResource VecIcon}" Width="12" Height="12" />
+                                        </Button>
+                                        <Button Style="{StaticResource GhostButton}" Padding="5,2" ToolTip="粘贴到此照片 (Ctrl+V)" Command="{Binding PasteColorToSelectedCommand}" IsEnabled="{Binding HasCopiedColorEdit}">
+                                            <Path Data="{StaticResource IconPaste}" Style="{StaticResource VecIcon}" Width="12" Height="12" />
+                                        </Button>
+                                        <Button Content="粘贴全部" Style="{StaticResource GhostButton}" Padding="5,2" FontSize="10.5" Command="{Binding PasteColorToAllAssetsCommand}" IsEnabled="{Binding HasCopiedColorEdit}" />
+                                        <Button Content="全重置" Style="{StaticResource GhostButton}" Padding="5,2" FontSize="10.5" Command="{Binding ResetColorAdjustmentsCommand}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="6" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox Grid.Column="0" ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset, Mode=TwoWay}" DisplayMemberPath="Name" />
+                                    <Button Grid.Column="2" Content="存为预设" Style="{StaticResource ModernButton}" Padding="8,5" Click="SaveCustomPreset_Click" />
+                                    <Button Grid.Column="3" Style="{StaticResource GhostButton}" Padding="6,5" Margin="4,0,0,0"
+                                            ToolTip="重命名当前自定义预设"
+                                            Visibility="{Binding IsCustomPresetSelected, Converter={StaticResource BoolToVis}}"
+                                            Click="RenamePreset_Click">
+                                        <Path Data="{StaticResource IconEdit}" Style="{StaticResource VecIcon}" Width="12" Height="12" />
+                                    </Button>
+                                    <Button Grid.Column="4" Style="{StaticResource GhostButton}" Padding="6,5" Margin="2,0,0,0"
+                                            ToolTip="删除当前自定义预设"
+                                            Visibility="{Binding IsCustomPresetSelected, Converter={StaticResource BoolToVis}}"
+                                            Click="DeletePreset_Click">
+                                        <Path Data="{StaticResource IconTrash}" Style="{StaticResource VecIcon}" Width="12" Height="12" />
+                                    </Button>
+                                </Grid>
+
+                                <!-- 二级子分类：解决传统7层手风琴无限滚屏！ -->
+                                <Border BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="0,0,0,1">
+                                    <UniformGrid Rows="1">
+                                        <RadioButton Content="光影与色彩" Style="{StaticResource SubSegmentRadio}"
+                                                     IsChecked="{Binding ColorSubTabIndex, Converter={StaticResource IntEquals}, ConverterParameter=0, Mode=TwoWay}" />
+                                        <RadioButton Content="曲线与分色" Style="{StaticResource SubSegmentRadio}"
+                                                     IsChecked="{Binding ColorSubTabIndex, Converter={StaticResource IntEquals}, ConverterParameter=1, Mode=TwoWay}" />
+                                        <RadioButton Content="裁剪与人像" Style="{StaticResource SubSegmentRadio}"
+                                                     IsChecked="{Binding ColorSubTabIndex, Converter={StaticResource IntEquals}, ConverterParameter=2, Mode=TwoWay}" />
+                                    </UniformGrid>
+                                </Border>
+                            </StackPanel>
+
+                            <!-- 子页内容区 -->
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="10,6,10,12">
+                                <Grid>
+                                    <!-- SubTab 0：日常 90% 高频调色一屏齐备 -->
+                                    <StackPanel Visibility="{Binding ColorSubTabIndex, Converter={StaticResource IntEqualsToVis}, ConverterParameter=0}">
+                                        <Border Style="{StaticResource PanelCard}">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,4">
+                                                    <TextBlock Text="光影动态范围" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                                    <Button Content="重置" Style="{StaticResource GhostButton}" Padding="5,1" FontSize="10.5" HorizontalAlignment="Right" Command="{Binding ResetLightingGroupCommand}" />
+                                                </Grid>
+                                                <controls:StudioSliderRow Title="曝光 (EV)" Minimum="-2.0" Maximum="2.0" Step="0.05" DefaultValue="0" ValueFormat="0.00" Value="{Binding EditExposure}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="亮度" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditBrightness}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="对比度" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditContrast}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="高光恢复" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditHighlights}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="阴影提亮" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditShadows}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="白色色阶" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditWhites}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="黑色色阶" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditBlacks}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="中间调 Gamma" Minimum="0.50" Maximum="1.80" Step="0.02" DefaultValue="1.00" ValueFormat="0.00" Value="{Binding EditGamma}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource PanelCard}" Margin="0">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,4">
+                                                    <TextBlock Text="白平衡、饱和度与滤镜" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                                    <Button Content="重置" Style="{StaticResource GhostButton}" Padding="5,1" FontSize="10.5" HorizontalAlignment="Right" Command="{Binding ResetWhiteBalanceGroupCommand}" />
+                                                </Grid>
+                                                <controls:StudioSliderRow Title="色温 (冷↔暖)" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditTemperature}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="色调 (绿↔品)" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditTint}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="自然饱和度" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditVibrance}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="全局饱和度" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditSaturation}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <Grid Margin="0,6,0,2">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="72" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0" Text="色调滤镜" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11.5" VerticalAlignment="Center" />
+                                                    <ComboBox Grid.Column="1" SelectedValue="{Binding EditFilterId, Mode=TwoWay}" SelectedValuePath="Tag">
+                                                        <ComboBoxItem Content="无滤镜（原色）" Tag="none" />
+                                                        <ComboBoxItem Content="富士日系清透" Tag="fuji_fresh" />
+                                                        <ComboBoxItem Content="柯达复古暖调" Tag="kodak_warm" />
+                                                        <ComboBoxItem Content="复古褪色胶片" Tag="vintage_fade" />
+                                                        <ComboBoxItem Content="银盐高反差黑白" Tag="bw_silver" />
+                                                        <ComboBoxItem Content="暖调复古黑白" Tag="bw_warm" />
+                                                    </ComboBox>
+                                                </Grid>
+                                                <controls:StudioSliderRow Title="滤镜强度 %" Minimum="0" Maximum="100" Step="1" DefaultValue="100" Value="{Binding EditFilterIntensity}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- SubTab 1：专业曲线、色阶与 HSL 八色相 -->
+                                    <StackPanel Visibility="{Binding ColorSubTabIndex, Converter={StaticResource IntEqualsToVis}, ConverterParameter=1}">
+                                        <Border Style="{StaticResource PanelCard}">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,6">
+                                                    <TextBlock Text="色调曲线与色阶 (Curve / Levels)" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                                    <Button Content="重置" Style="{StaticResource GhostButton}" Padding="5,1" FontSize="10.5" HorizontalAlignment="Right" Command="{Binding ResetCurvesAndLevelsCommand}" />
+                                                </Grid>
+                                                <UniformGrid Rows="1" Margin="0,0,0,6">
+                                                    <ToggleButton Content="RGB" Style="{StaticResource PillToggleButton}" Margin="0,0,2,0" IsChecked="{Binding ActiveCurveChannel, Converter={StaticResource EnumEquals}, ConverterParameter=0, Mode=OneWay}" Click="CurveCh0_Click" />
+                                                    <ToggleButton Content="红" Style="{StaticResource PillToggleButton}" Margin="2,0,2,0" IsChecked="{Binding ActiveCurveChannel, Converter={StaticResource EnumEquals}, ConverterParameter=1, Mode=OneWay}" Click="CurveCh1_Click" />
+                                                    <ToggleButton Content="绿" Style="{StaticResource PillToggleButton}" Margin="2,0,2,0" IsChecked="{Binding ActiveCurveChannel, Converter={StaticResource EnumEquals}, ConverterParameter=2, Mode=OneWay}" Click="CurveCh2_Click" />
+                                                    <ToggleButton Content="蓝" Style="{StaticResource PillToggleButton}" Margin="2,0,0,0" IsChecked="{Binding ActiveCurveChannel, Converter={StaticResource EnumEquals}, ConverterParameter=3, Mode=OneWay}" Click="CurveCh3_Click" />
+                                                </UniformGrid>
+                                                <controls:ToneCurveControl x:Name="ToneCurveEditor" Height="150"
+                                                                           Curves="{Binding ActiveToneCurves}"
+                                                                           ActiveChannel="{Binding ActiveCurveChannel}"
+                                                                           CurveEditStarted="Slider_EditStarted"
+                                                                           CurveEditCompleted="Slider_EditCompleted"
+                                                                           CurveChanged="ToneCurveEditor_CurveChanged" />
+                                                <TextBlock Text="左键添加或拖动，右键删点，双击重置通道" FontSize="10" Foreground="{DynamicResource BrushTextMuted}" Margin="0,4,0,6" />
+                                                <controls:StudioSliderRow Title="输入黑场" Minimum="0" Maximum="180" Step="1" DefaultValue="0" Value="{Binding EditInputBlack}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="输入白场" Minimum="75" Maximum="255" Step="1" DefaultValue="255" Value="{Binding EditInputWhite}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="输出黑场" Minimum="0" Maximum="120" Step="1" DefaultValue="0" Value="{Binding EditOutputBlack}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="输出白场" Minimum="135" Maximum="255" Step="1" DefaultValue="255" Value="{Binding EditOutputWhite}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource PanelCard}" Margin="0">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,6">
+                                                    <TextBlock Text="HSL 八色相分区微调" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                                    <Button Content="重置" Style="{StaticResource GhostButton}" Padding="5,1" FontSize="10.5" HorizontalAlignment="Right" Command="{Binding ResetHslGroupCommand}" />
+                                                </Grid>
+                                                <UniformGrid Rows="2" Columns="4" Margin="0,0,0,6">
+                                                    <ToggleButton Content="红" Style="{StaticResource PillToggleButton}" Margin="2" IsChecked="{Binding ActiveHslChannel, Converter={StaticResource EnumEquals}, ConverterParameter=0, Mode=OneWay}" Click="HslCh_Click" Tag="0" />
+                                                    <ToggleButton Content="橙(肤)" Style="{StaticResource PillToggleButton}" Margin="2" IsChecked="{Binding ActiveHslChannel, Converter={StaticResource EnumEquals}, ConverterParameter=1, Mode=OneWay}" Click="HslCh_Click" Tag="1" />
+                                                    <ToggleButton Content="黄" Style="{StaticResource PillToggleButton}" Margin="2" IsChecked="{Binding ActiveHslChannel, Converter={StaticResource EnumEquals}, ConverterParameter=2, Mode=OneWay}" Click="HslCh_Click" Tag="2" />
+                                                    <ToggleButton Content="绿" Style="{StaticResource PillToggleButton}" Margin="2" IsChecked="{Binding ActiveHslChannel, Converter={StaticResource EnumEquals}, ConverterParameter=3, Mode=OneWay}" Click="HslCh_Click" Tag="3" />
+                                                    <ToggleButton Content="青" Style="{StaticResource PillToggleButton}" Margin="2" IsChecked="{Binding ActiveHslChannel, Converter={StaticResource EnumEquals}, ConverterParameter=4, Mode=OneWay}" Click="HslCh_Click" Tag="4" />
+                                                    <ToggleButton Content="蓝(底)" Style="{StaticResource PillToggleButton}" Margin="2" IsChecked="{Binding ActiveHslChannel, Converter={StaticResource EnumEquals}, ConverterParameter=5, Mode=OneWay}" Click="HslCh_Click" Tag="5" />
+                                                    <ToggleButton Content="紫" Style="{StaticResource PillToggleButton}" Margin="2" IsChecked="{Binding ActiveHslChannel, Converter={StaticResource EnumEquals}, ConverterParameter=6, Mode=OneWay}" Click="HslCh_Click" Tag="6" />
+                                                    <ToggleButton Content="品红" Style="{StaticResource PillToggleButton}" Margin="2" IsChecked="{Binding ActiveHslChannel, Converter={StaticResource EnumEquals}, ConverterParameter=7, Mode=OneWay}" Click="HslCh_Click" Tag="7" />
+                                                </UniformGrid>
+                                                <controls:StudioSliderRow Title="色相偏移" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding HslHue}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="饱和度" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding HslSaturation}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="明度提亮" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding HslLightness}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- SubTab 2：构图裁剪、细节锐化与证件照背景 -->
+                                    <StackPanel Visibility="{Binding ColorSubTabIndex, Converter={StaticResource IntEqualsToVis}, ConverterParameter=2}">
+                                        <Border Style="{StaticResource PanelCard}">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,6">
+                                                    <TextBlock Text="构图裁剪与旋转拉直" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                                    <Button Content="重置" Style="{StaticResource GhostButton}" Padding="5,1" FontSize="10.5" HorizontalAlignment="Right" Command="{Binding ResetCropGeometryCommand}" />
+                                                </Grid>
+                                                <UniformGrid Rows="1" Margin="0,0,0,6">
+                                                    <Button Style="{StaticResource ModernButton}" Margin="0,0,3,0" Command="{Binding RotateQuarterLeftCommand}" ToolTip="左转 90°">
+                                                        <Path Data="{StaticResource IconRotateLeft}" Style="{StaticResource VecIcon}" />
+                                                    </Button>
+                                                    <Button Style="{StaticResource ModernButton}" Margin="3,0,3,0" Command="{Binding RotateQuarterRightCommand}" ToolTip="右转 90°">
+                                                        <Path Data="{StaticResource IconRotateRight}" Style="{StaticResource VecIcon}" />
+                                                    </Button>
+                                                    <Button Style="{StaticResource ModernButton}" Margin="3,0,3,0" Command="{Binding ToggleFlipHorizontalCommand}" ToolTip="水平镜像">
+                                                        <Path Data="{StaticResource IconFlipH}" Style="{StaticResource VecIcon}" />
+                                                    </Button>
+                                                    <Button Style="{StaticResource ModernButton}" Margin="3,0,0,0" Command="{Binding ToggleFlipVerticalCommand}" ToolTip="垂直翻转">
+                                                        <Path Data="{StaticResource IconFlipV}" Style="{StaticResource VecIcon}" />
+                                                    </Button>
+                                                </UniformGrid>
+                                                <Button Content="旋转照片以适配格位方向" Style="{StaticResource ModernButton}" Margin="0,0,0,6"
+                                                        Command="{Binding AutoOrientPhotoToSlotCommand}"
+                                                        ToolTip="当横图放在竖格（或竖图放在横格）时，一键旋转 90° 并满幅适配" />
+                                                <controls:StudioSliderRow Title="水平拉直 °" Minimum="-45" Maximum="45" Step="0.2" DefaultValue="0" ValueFormat="0.0" Value="{Binding EditRotationDegrees}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="画面缩放" Minimum="1.0" Maximum="4.0" Step="0.05" DefaultValue="1.0" ValueFormat="0.00" Value="{Binding EditZoom}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="水平偏移" Minimum="-1.0" Maximum="1.0" Step="0.02" DefaultValue="0" ValueFormat="0.00" Value="{Binding EditPanX}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="垂直偏移" Minimum="-1.0" Maximum="1.0" Step="0.02" DefaultValue="0" ValueFormat="0.00" Value="{Binding EditPanY}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                 <CheckBox Content="自动裁切填满格位（取消则完整留白 Contain）" IsChecked="{Binding IsCoverFitMode}" Margin="0,6,0,2" />
+                                                <TextBlock Text="{Binding EstimatedIdHeadInfo}" Foreground="{DynamicResource BrushStatusOk}" FontSize="10.5" TextWrapping="Wrap" Margin="0,2,0,0" />
+                                                <Separator Margin="0,8,0,6" Background="{DynamicResource BrushBorderSubtle}" />
+                                                <TextBlock Text="{Binding DetectedFaceSummaryText}" FontSize="10.5" Foreground="{DynamicResource BrushAccent}" TextWrapping="Wrap" Margin="0,0,0,6" />
+                                                <UniformGrid Rows="1" Margin="0,0,0,6">
+                                                    <Button Content="{Binding AutoFrameActionText}" Style="{StaticResource PrimaryButton}" Margin="0,0,4,0"
+                                                            IsEnabled="{Binding CanAutoFramePhoto}"
+                                                            ToolTip="按格位比例保留主体与原构图"
+                                                            Command="{Binding AutoFrameWithFaceCommand}" />
+                                                    <Button Content="AI 双眼水平" Style="{StaticResource ModernButton}" Margin="4,0,0,0"
+                                                            IsEnabled="{Binding HasFaceDetectionModel}"
+                                                            Visibility="{Binding ActiveScenario, Converter={StaticResource EnumToVis}, ConverterParameter=IdPhoto}"
+                                                            ToolTip="保持当前缩放位置，仅按左右瞳孔自动水平摆正"
+                                                            Command="{Binding AutoLevelEyesCommand}" />
+                                                </UniformGrid>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource PanelCard}">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,4">
+                                                    <TextBlock Text="一键影棚人像优化 &amp; 细节柔肤" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                                    <Button Content="重置" Style="{StaticResource GhostButton}" Padding="5,1" FontSize="10.5" HorizontalAlignment="Right" Command="{Binding ResetDetailAndBgGroupCommand}" />
+                                                </Grid>
+                                                <CheckBox Content="启用影棚自动优化"
+                                                          IsChecked="{Binding EditStudioPortraitEnhance}"
+                                                          IsEnabled="{Binding HasSelectedAsset}"
+                                                          ToolTip="自动调整面部曝光和左右脸光线，保留五官细节。"
+                                                          Margin="0,2,0,4" />
+                                                <StackPanel Visibility="{Binding EditStudioPortraitEnhance, Converter={StaticResource BoolToVis}}">
+                                                    <Grid Margin="0,2,0,5">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="66" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="优化风格" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" VerticalAlignment="Center" />
+                                                        <ComboBox Grid.Column="1"
+                                                                  ItemsSource="{Binding StudioEnhanceModeOptions}"
+                                                                  DisplayMemberPath="Value"
+                                                                  SelectedValuePath="Key"
+                                                                  SelectedValue="{Binding EditStudioEnhanceMode, Mode=TwoWay}" />
+                                                    </Grid>
+                                                    <controls:StudioSliderRow Title="影棚优化强度" Minimum="0" Maximum="100" Step="1" DefaultValue="70" Value="{Binding EditStudioEnhanceStrength}"
+                                                                              EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                </StackPanel>
+                                                <Button Content="将影棚优化应用到已排版证件照" Style="{StaticResource ModernButton}" Margin="0,4,0,2"
+                                                        Visibility="{Binding ActiveScenario, Converter={StaticResource EnumToVis}, ConverterParameter=IdPhoto}"
+                                                        IsEnabled="{Binding HasSelectedAsset}"
+                                                        ToolTip="为证件照页面中的照片应用当前影棚风格和强度"
+                                                        Command="{Binding BatchEnhanceAllIdPhotosCommand}" />
+                                                <Separator Margin="0,6" Background="{DynamicResource BrushBorderSubtle}" />
+                                                <controls:StudioSliderRow Title="清晰度 Clarity" Minimum="-100" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditClarity}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="USM 打印锐化" Minimum="0" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditSharpening}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="人像保边柔肤" Minimum="0" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditSkinSoftening}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource PanelCard}" Margin="0">
+                                            <StackPanel>
+                                                <TextBlock Text="证件照白墙提纯 &amp; AI 换底" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,6" />
+                                                <controls:StudioSliderRow Title="白墙提纯" Minimum="0" Maximum="100" Step="1" DefaultValue="0" Value="{Binding EditWhiteWallCleanup}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <Separator Margin="0,6" Background="{DynamicResource BrushBorderSubtle}" />
+                                                <CheckBox Content="启用离线 AI 抠图替换底色" IsChecked="{Binding EditAiBackgroundReplace}" IsEnabled="{Binding HasAiMattingModel}" Margin="0,0,0,6" />
+                                                <Grid Margin="0,0,0,6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="换底模型" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                    <ComboBox x:Name="MattingModelCombo" Grid.Column="1" AutomationProperties.Name="换底模型"
+                                                              ItemsSource="{Binding AvailableAiModels}" SelectedItem="{Binding SelectedAiModelName, Mode=TwoWay}"
+                                                              IsEnabled="{Binding CanSelectAiModel}" ToolTip="切换后会重新计算换底预览，此选择适用于当前软件">
+                                                        <ComboBox.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <TextBlock TextTrimming="CharacterEllipsis">
+                                                                    <TextBlock.Style>
+                                                                        <Style TargetType="TextBlock">
+                                                                            <Setter Property="Text" Value="{Binding}" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding}" Value="pas-photo-matting-v1.onnx">
+                                                                                    <Setter Property="Text" Value="Pas（证件照推荐）" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding}" Value="hivision_modnet.onnx">
+                                                                                    <Setter Property="Text" Value="Hivision MODNet" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding}" Value="birefnet-lite-matting-768-fp16.onnx">
+                                                                                    <Setter Property="Text" Value="BiRefNet 768（细发）" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding}" Value="modnet_photographic_portrait_matting.onnx">
+                                                                                    <Setter Property="Text" Value="MODNet（原版）" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </TextBlock.Style>
+                                                                </TextBlock>
+                                                            </DataTemplate>
+                                                        </ComboBox.ItemTemplate>
+                                                    </ComboBox>
+                                                </Grid>
+                                                <TextBlock Text="纯色底与自定义色" FontSize="10.5" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,4" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                    <Button Width="22" Height="22" Margin="0,0,5,0" Background="#FFFFFF" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="纯白底 #FFFFFF" Command="{Binding ApplyIdBackgroundColorCommand}" CommandParameter="#FFFFFF" />
+                                                    <Button Width="22" Height="22" Margin="0,0,5,0" Background="#438EDB" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="公安标准蓝 #438EDB" Command="{Binding ApplyIdBackgroundColorCommand}" CommandParameter="#438EDB" />
+                                                    <Button Width="22" Height="22" Margin="0,0,5,0" Background="#2B6CB0" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="深海商务蓝 #2B6CB0" Command="{Binding ApplyIdBackgroundColorCommand}" CommandParameter="#2B6CB0" />
+                                                    <Button Width="22" Height="22" Margin="0,0,5,0" Background="#D9001B" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="标准大红底 #D9001B" Command="{Binding ApplyIdBackgroundColorCommand}" CommandParameter="#D9001B" />
+                                                    <Button Width="22" Height="22" Margin="0,0,6,0" Background="#CBD5E1" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="高级浅灰 #CBD5E1" Command="{Binding ApplyIdBackgroundColorCommand}" CommandParameter="#CBD5E1" />
+                                                    <Button Height="22" Padding="7,0" Style="{StaticResource ModernButton}" Click="PickIdBackgroundColor_Click" ToolTip="选择任意背景/外围颜色">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Border Width="10" Height="10" CornerRadius="2" Margin="0,0,4,0" Background="{Binding EditReplacementBgHex, Converter={StaticResource HexToBrush}}" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" />
+                                                            <TextBlock Text="选色" FontSize="10.5" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </StackPanel>
+
+                                                <TextBlock Text="影楼商业质感渐变底（柔光聚光）" FontSize="10.5" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,4" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                    <Button Width="24" Height="22" Margin="0,0,5,0" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1"
+                                                            ToolTip="海马体质感渐变蓝" Command="{Binding ApplyIdGradientBackgroundCommand}" CommandParameter="#1E4E8C|#6BA8E5">
+                                                        <Button.Background>
+                                                            <RadialGradientBrush Center="0.5,0.38" GradientOrigin="0.5,0.38" RadiusX="0.7" RadiusY="0.7">
+                                                                <GradientStop Color="#6BA8E5" Offset="0" />
+                                                                <GradientStop Color="#1E4E8C" Offset="1" />
+                                                            </RadialGradientBrush>
+                                                        </Button.Background>
+                                                    </Button>
+                                                    <Button Width="24" Height="22" Margin="0,0,5,0" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1"
+                                                            ToolTip="商业高级灰渐变" Command="{Binding ApplyIdGradientBackgroundCommand}" CommandParameter="#525D6B|#DCE3EC">
+                                                        <Button.Background>
+                                                            <RadialGradientBrush Center="0.5,0.38" GradientOrigin="0.5,0.38" RadiusX="0.7" RadiusY="0.7">
+                                                                <GradientStop Color="#DCE3EC" Offset="0" />
+                                                                <GradientStop Color="#525D6B" Offset="1" />
+                                                            </RadialGradientBrush>
+                                                        </Button.Background>
+                                                    </Button>
+                                                    <Button Width="24" Height="22" Margin="0,0,5,0" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1"
+                                                            ToolTip="暖棕质感渐变（文艺履历照）" Command="{Binding ApplyIdGradientBackgroundCommand}" CommandParameter="#5C4438|#C6AA96">
+                                                        <Button.Background>
+                                                            <RadialGradientBrush Center="0.5,0.38" GradientOrigin="0.5,0.38" RadiusX="0.7" RadiusY="0.7">
+                                                                <GradientStop Color="#C6AA96" Offset="0" />
+                                                                <GradientStop Color="#5C4438" Offset="1" />
+                                                            </RadialGradientBrush>
+                                                        </Button.Background>
+                                                    </Button>
+                                                    <Button Width="24" Height="22" Margin="0,0,6,0" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1"
+                                                            ToolTip="绯红渐变柔光" Command="{Binding ApplyIdGradientBackgroundCommand}" CommandParameter="#991B1B|#F87171">
+                                                        <Button.Background>
+                                                            <RadialGradientBrush Center="0.5,0.38" GradientOrigin="0.5,0.38" RadiusX="0.7" RadiusY="0.7">
+                                                                <GradientStop Color="#F87171" Offset="0" />
+                                                                <GradientStop Color="#991B1B" Offset="1" />
+                                                            </RadialGradientBrush>
+                                                        </Button.Background>
+                                                    </Button>
+                                                    <Button Height="22" Padding="7,0" Style="{StaticResource ModernButton}" Click="PickIdSecondaryBgColor_Click" ToolTip="自定义中心亮区渐变色"
+                                                            Visibility="{Binding EditUseGradientBg, Converter={StaticResource BoolToVis}}">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Border Width="10" Height="10" CornerRadius="2" Margin="0,0,4,0" Background="{Binding EditReplacementBgSecondaryHex, Converter={StaticResource HexToBrush}}" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" />
+                                                            <TextBlock Text="高光色" FontSize="10.5" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </StackPanel>
+                                                <CheckBox Content="启用中心柔光渐变底" IsChecked="{Binding EditUseGradientBg}" IsEnabled="{Binding HasAiMattingModel}" Margin="0,0,0,6" />
+                                                <controls:StudioSliderRow Title="边缘内缩羽化" Minimum="0" Maximum="6" Step="0.5" DefaultValue="0.5" ValueFormat="0.0" Value="{Binding EditMattingFeather}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <controls:StudioSliderRow Title="边缘去白边/溢色" Minimum="0" Maximum="100" Step="1" DefaultValue="60" Value="{Binding EditSpillSuppression}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                <Expander Header="高级边缘精修" Style="{StaticResource StudioExpander}" IsExpanded="False" Margin="0,6,0,0">
+                                                    <StackPanel>
+                                                        <controls:StudioSliderRow Title="边缘微缩/扩张" Minimum="-2.0" Maximum="1.0" Step="0.1" DefaultValue="0.0" ValueFormat="0.0" Value="{Binding EditMattingEdgeShift}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                    </StackPanel>
+                                                </Expander>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border Style="{StaticResource PanelCard}" Margin="0,10,0,0">
+                                            <StackPanel>
+                                                <Grid Margin="0,0,0,6">
+                                                    <TextBlock Text="证件照电子正装叠加（可选）" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" />
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                        <Button Content="贴图目录" Style="{StaticResource GhostButton}" Padding="5,1" FontSize="10"
+                                                                ToolTip="打开 portable_data\suits 目录，可放入自定义透明 PNG 正装模板"
+                                                                Command="{Binding OpenSuitsDirectoryCommand}" />
+                                                        <Button Content="刷新" Style="{StaticResource GhostButton}" Padding="5,1" FontSize="10"
+                                                                ToolTip="重新扫描自定义 PNG 正装模板"
+                                                                Command="{Binding RefreshFormalSuitsCommand}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                                <ComboBox ItemsSource="{Binding FormalSuitOptions}" SelectedItem="{Binding SelectedFormalSuitOption, Mode=TwoWay}"
+                                                          DisplayMemberPath="Name" Margin="0,0,0,6" />
+                                                <StackPanel Visibility="{Binding IsSuitOverlayActive, Converter={StaticResource BoolToVis}}">
+                                                    <Button Content="AI 自动贴合肩颈位置" Style="{StaticResource ModernButton}" Margin="0,0,0,6"
+                                                            IsEnabled="{Binding HasFaceDetectionModel}" Command="{Binding AutoAlignFormalSuitCommand}" />
+                                                    <controls:StudioSliderRow Title="衣领缩放" Minimum="0.45" Maximum="1.80" Step="0.02" DefaultValue="1.00" ValueFormat="0.00" Value="{Binding EditSuitScale}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                    <controls:StudioSliderRow Title="上下位置 Y" Minimum="0.20" Maximum="0.90" Step="0.005" DefaultValue="0.60" ValueFormat="0.000" Value="{Binding EditSuitNeckYRatio}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                    <controls:StudioSliderRow Title="左右位置 X" Minimum="0.15" Maximum="0.85" Step="0.005" DefaultValue="0.50" ValueFormat="0.000" Value="{Binding EditSuitCenterXRatio}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Grid>
+                            </ScrollViewer>
+                        </Grid>
+                    </TabItem>
+
+                    <!-- ==================== TAB 2：卡片装饰与拍立得样式 ==================== -->
+                    <TabItem Header="卡片装饰" Style="{StaticResource StudioTabItem}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10,4,10,14">
+                            <StackPanel>
+                                <!-- 拍立得专属卡片样式工作区 -->
+                                <Border Style="{StaticResource PanelCard}" BorderBrush="{DynamicResource BrushAccent}"
+                                        Visibility="{Binding IsPolaroidControlsVisible, Converter={StaticResource BoolToVis}}">
+                                    <StackPanel>
+                                        <TextBlock Text="拍立得相纸外观与变量签名" FontWeight="SemiBold" Foreground="{DynamicResource BrushAccent}" Margin="0,0,0,8" />
+
+                                        <TextBlock Text="相纸边框底色" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,0,0,5" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <Button Width="23" Height="23" Margin="0,0,5,0" Background="#FFFFFF" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="经典纯白" Command="{Binding ApplyPolaroidFrameColorCommand}" CommandParameter="#FFFFFF" />
+                                            <Button Width="23" Height="23" Margin="0,0,5,0" Background="#FAF6EE" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="复古暖米白" Command="{Binding ApplyPolaroidFrameColorCommand}" CommandParameter="#FAF6EE" />
+                                            <Button Width="23" Height="23" Margin="0,0,5,0" Background="#1E2024" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="暗夜纯黑" Command="{Binding ApplyPolaroidFrameColorCommand}" CommandParameter="#1E2024" />
+                                            <Button Width="23" Height="23" Margin="0,0,5,0" Background="#F6E6E8" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="莫兰迪樱花粉" Command="{Binding ApplyPolaroidFrameColorCommand}" CommandParameter="#F6E6E8" />
+                                            <Button Width="23" Height="23" Margin="0,0,5,0" Background="#E4EEF5" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="雾霾浅蓝" Command="{Binding ApplyPolaroidFrameColorCommand}" CommandParameter="#E4EEF5" />
+                                            <Button Width="23" Height="23" Margin="0,0,5,0" Background="#E6EFE8" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="鼠尾草绿" Command="{Binding ApplyPolaroidFrameColorCommand}" CommandParameter="#E6EFE8" />
+                                            <Button Width="23" Height="23" Margin="0,0,6,0" Background="#F3EBDD" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="燕麦奶茶" Command="{Binding ApplyPolaroidFrameColorCommand}" CommandParameter="#F3EBDD" />
+                                            <Button Height="23" Padding="7,0" Style="{StaticResource ModernButton}" Click="PickPolaroidFrameColor_Click" ToolTip="自定义任意相框颜色">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Width="10" Height="10" CornerRadius="2" Margin="0,0,4,0" Background="{Binding PolaroidFrameColorHex, Converter={StaticResource HexToBrush}}" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" />
+                                                    <TextBlock Text="选色" FontSize="10.5" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+
+                                        <UniformGrid Rows="1" Margin="0,0,0,8">
+                                            <CheckBox Content="内框压痕阴影" IsChecked="{Binding PolaroidInnerShadow}" />
+                                            <CheckBox Content="相纸微颗粒质感" IsChecked="{Binding PolaroidPaperGrain}" />
+                                        </UniformGrid>
+
+                                        <TextBlock Text="宽下巴底部签名文案（支持变量自动替换）" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,0,0,4" />
+                                        <TextBox Text="{Binding PolaroidCaptionTemplate, UpdateSourceTrigger=LostFocus}" AcceptsReturn="True" Height="46" TextWrapping="Wrap" Margin="0,0,0,5" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <Button Content="+日期" Style="{StaticResource GhostButton}" Padding="5,2" FontSize="10.5" Command="{Binding InsertPolaroidTokenCommand}" CommandParameter="{}{Date}" />
+                                            <Button Content="+相机" Style="{StaticResource GhostButton}" Padding="5,2" FontSize="10.5" Command="{Binding InsertPolaroidTokenCommand}" CommandParameter="{}{Camera}" />
+                                            <Button Content="+文件名" Style="{StaticResource GhostButton}" Padding="5,2" FontSize="10.5" Command="{Binding InsertPolaroidTokenCommand}" CommandParameter="{}{Filename}" />
+                                            <Button Content="+序号" Style="{StaticResource GhostButton}" Padding="5,2" FontSize="10.5" Command="{Binding InsertPolaroidTokenCommand}" CommandParameter="{}{Index}" />
+                                        </StackPanel>
+
+                                        <TextBlock Text="字体与对齐样式" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,0,0,4" />
+                                        <ComboBox ItemsSource="{Binding AvailableFonts}" SelectedItem="{Binding PolaroidFontFamily, Mode=TwoWay}" Margin="0,0,0,6" />
+                                        <controls:StudioSliderRow LabelWidth="64" Title="字号 pt" Minimum="6" Maximum="20" Step="0.5" DefaultValue="9" ValueFormat="0.0" Value="{Binding PolaroidFontSizePt}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                        <Grid Margin="0,5,0,8">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="6" />
+                                                <ColumnDefinition Width="84" />
+                                                <ColumnDefinition Width="6" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox Grid.Column="0" ItemsSource="{Binding PolaroidTextAlignments}" DisplayMemberPath="Value" SelectedValuePath="Key"
+                                                      SelectedValue="{Binding PolaroidTextAlign, Mode=TwoWay}" />
+                                            <ComboBox Grid.Column="2" SelectedValue="{Binding PolaroidTextColorHex, Mode=TwoWay}" SelectedValuePath="Tag">
+                                                <ComboBoxItem Content="深灰字" Tag="#374151" />
+                                                <ComboBoxItem Content="纯黑字" Tag="#111827" />
+                                                <ComboBoxItem Content="复古棕" Tag="#6B4F3B" />
+                                                <ComboBoxItem Content="纯白反色" Tag="#F9FAFB" />
+                                            </ComboBox>
+                                            <Button Grid.Column="4" Height="26" Padding="7,0" Style="{StaticResource ModernButton}" Click="PickPolaroidTextColor_Click" ToolTip="自定义文字颜色">
+                                                <Border Width="12" Height="12" CornerRadius="2" Background="{Binding PolaroidTextColorHex, Converter={StaticResource HexToBrush}}" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" />
+                                            </Button>
+                                        </Grid>
+
+                                        <Button Content="同步拍立得样式到本页全部卡片" Style="{StaticResource ModernButton}" Command="{Binding ApplyPolaroidStyleToAllSlotsCommand}" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 非拍立得模式时的友好提示引导 -->
+                                <Border Style="{StaticResource PanelCard}"
+                                        Visibility="{Binding IsPolaroidControlsVisible, Converter={StaticResource InverseBoolToVis}}">
+                                    <StackPanel>
+                                        <TextBlock Text="拍立得相纸外观" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                        <TextBlock Text="当前处于证件照/普通拼版模式。如需制作富士 Instax / 宝丽来白框签名样式，可一键切换到拍立得排版。"
+                                                   TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,0,0,8" />
+                                        <Button Content="切换到拍立得样式排版" Style="{StaticResource ModernButton}" Click="ScenarioPolaroid_Click" HorizontalAlignment="Left" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- 通用卡片外观与印前页脚 -->
+                                <Border Style="{StaticResource PanelCard}" Margin="0">
+                                    <StackPanel>
+                                        <TextBlock Text="圆角、底色与印前控制条" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                        <controls:StudioSliderRow LabelWidth="76" Title="卡片圆角 mm" Minimum="0" Maximum="6" Step="0.2" DefaultValue="0" ValueFormat="0.0" Value="{Binding LayoutCornerRadiusMm}" EditStarted="Slider_EditStarted" EditCompleted="Slider_EditCompleted" />
+                                        <TextBlock Text="整页纸张底色" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,6,0,5" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <Button Width="23" Height="23" Margin="0,0,6,0" Background="#FFFFFF" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="标准纯白相纸" Click="ApplyCanvasBg_Click" Tag="#FFFFFF" />
+                                            <Button Width="23" Height="23" Margin="0,0,6,0" Background="#FAF6EE" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="暖调米白底" Click="ApplyCanvasBg_Click" Tag="#FAF6EE" />
+                                            <Button Width="23" Height="23" Margin="0,0,6,0" Background="#F1F5F9" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="极浅灰底" Click="ApplyCanvasBg_Click" Tag="#F1F5F9" />
+                                            <Button Width="23" Height="23" Margin="0,0,6,0" Background="#181A20" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" ToolTip="暗色底版" Click="ApplyCanvasBg_Click" Tag="#181A20" />
+                                            <Button Height="23" Padding="7,0" Style="{StaticResource ModernButton}" Click="PickCanvasBgColor_Click" ToolTip="自定义整页背景底色">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Border Width="10" Height="10" CornerRadius="2" Margin="0,0,4,0" Background="{Binding CanvasBackgroundHex, Converter={StaticResource HexToBrush}}" BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" />
+                                                    <TextBlock Text="选色" FontSize="10.5" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+                                        <CheckBox Content="页脚打印印前信息条与 11 级灰阶测试条 (Slug)" IsChecked="{Binding ShowSlugFooter}" Margin="0,0,0,8" />
+                                        <Button Content="将当前布局存为自定义模板" Style="{StaticResource ModernButton}" Click="OpenCustomTemplateDialog_Click" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- ==================== TAB 3：印前预检、日常输出与专业校准分层 ==================== -->
+                    <TabItem Header="打印导出" Style="{StaticResource StudioTabItem}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10,4,10,14">
+                            <StackPanel>
+                                <!-- Tier 1: Preflight 印前预检（可点击问题定位格位） -->
+                                <Border Style="{StaticResource PanelCard}" Padding="10,8" Margin="0,0,0,8">
+                                    <StackPanel>
+                                        <Grid>
+                                            <TextBlock Text="印前质量预检" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                                            <TextBlock x:Name="PreflightTabStatus" Text="全部通过" Foreground="{DynamicResource BrushStatusOk}" FontSize="11.5" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                        <ScrollViewer MaxHeight="148" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0"
+                                                      Visibility="{Binding HasPreflightIssues, Converter={StaticResource BoolToVis}}">
+                                            <ItemsControl ItemsSource="{Binding PreflightReport.Issues}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Grid Margin="0,0,0,4">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <Button Grid.Column="0" Style="{StaticResource GhostButton}" Padding="8,5"
+                                                                    HorizontalContentAlignment="Left" Click="PreflightIssue_Click" ToolTip="定位对应格位">
+                                                                <TextBlock TextWrapping="Wrap" FontSize="10.5">
+                                                                    <Run Text="[" /><Run Text="{Binding Category}" FontWeight="SemiBold" /><Run Text="] " />
+                                                                    <Run Text="{Binding Message}" />
+                                                                </TextBlock>
+                                                            </Button>
+                                                            <Button Grid.Column="1" Style="{StaticResource ModernButton}" Padding="7,3" Margin="4,0,0,0"
+                                                                    FontSize="10" VerticalAlignment="Center"
+                                                                    Content="{Binding QuickFixLabel}"
+                                                                    Visibility="{Binding HasQuickFix, Converter={StaticResource BoolToVis}}"
+                                                                    Command="{Binding DataContext.ApplyPreflightQuickFixCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                    CommandParameter="{Binding}" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Tier 2: 日常快速打印与高清导出（核心高频区） -->
+                                <Border Style="{StaticResource PanelCard}" Margin="0,0,0,8">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,6">
+                                            <TextBlock Text="日常打印与输出" FontWeight="SemiBold" FontSize="12.5" VerticalAlignment="Center" HorizontalAlignment="Left" />
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Button Content="设备设置" Style="{StaticResource GhostButton}" Padding="5,2" FontSize="10.5" Click="OutputSettings_Click" />
+                                                <Button Content="刷新设备" Style="{StaticResource GhostButton}" Padding="5,2" FontSize="10.5" Click="RefreshPrinters_Click" />
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <ComboBox ItemsSource="{Binding Source={StaticResource PrinterGroups}}" DisplayMemberPath="Name"
+                                                  SelectedValuePath="Name" SelectedValue="{Binding SelectedPrinterName, Mode=TwoWay}" Margin="0,0,0,6">
+                                            <ComboBox.GroupStyle>
+                                                <GroupStyle>
+                                                    <GroupStyle.HeaderTemplate>
+                                                        <DataTemplate>
+                                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="7,5,7,2"
+                                                                       Foreground="{DynamicResource BrushTextSecondary}" />
+                                                        </DataTemplate>
+                                                    </GroupStyle.HeaderTemplate>
+                                                </GroupStyle>
+                                            </ComboBox.GroupStyle>
+                                        </ComboBox>
+                                        <TextBlock Text="{Binding PrinterHardwareSummary}" TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,6"
+                                                   Visibility="{Binding InstalledPrinters.Count, Converter={StaticResource IntZeroToVis}}" />
+
+                                        <DockPanel Margin="0,0,0,8" LastChildFill="False">
+                                            <TextBlock Text="份数" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                            <TextBox Text="{Binding PrintCopies, UpdateSourceTrigger=PropertyChanged}" Width="50" Height="28" />
+                                            <Button DockPanel.Dock="Right" Style="{StaticResource GhostButton}"
+                                                    Click="OutputSettings_Click" ToolTip="更改打印和导出的默认精度">
+                                                <TextBlock Text="{Binding PrintDpi, StringFormat=打印 {0} DPI}" />
+                                            </Button>
+                                        </DockPanel>
+
+                                        <Button Style="{StaticResource PrimaryButton}" Height="32" Margin="0,0,0,6" Command="{Binding PrintActiveSheetCommand}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Path Data="{StaticResource IconPrint}" Style="{StaticResource VecIcon}" Width="13" Height="13" Margin="0,0,6,0" />
+                                                <TextBlock Text="立即打印当前页 (Ctrl+P)" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Content="连续打印全部页" Style="{StaticResource ModernButton}" Height="28" Margin="0,0,0,10" Command="{Binding PrintAllSheetsCommand}" />
+
+                                        <Separator Background="{DynamicResource BrushBorderSubtle}" Margin="0,0,0,10" />
+
+                                        <Button Style="{StaticResource GhostButton}" Click="OutputSettings_Click"
+                                                HorizontalAlignment="Right" Margin="0,0,0,4" ToolTip="更改导出精度和 JPG 品质">
+                                            <TextBlock Text="{Binding ExportDpi, StringFormat=导出 {0} DPI}" />
+                                        </Button>
+
+                                        <UniformGrid Rows="1" Margin="0,0,0,6">
+                                            <Button Content="导出当前 JPG" Style="{StaticResource ModernButton}" Height="28" Margin="0,0,4,0" Command="{Binding ExportCurrentJpegCommand}" />
+                                            <Button Content="导出当前 PNG" Style="{StaticResource ModernButton}" Height="28" Margin="4,0,0,0" Command="{Binding ExportCurrentPngCommand}" />
+                                        </UniformGrid>
+                                        <UniformGrid Rows="1" Margin="0,0,0,6">
+                                            <Button Content="批量导出全部 JPG" Style="{StaticResource ModernButton}" Height="28" Margin="0,0,4,0" Command="{Binding ExportBatchJpegCommand}" ToolTip="将所有页面按顺序 P01, P02... 导出为高清 JPG" />
+                                            <Button Content="批量导出全部 PNG" Style="{StaticResource ModernButton}" Height="28" Margin="4,0,0,0" Command="{Binding ExportBatchPngCommand}" ToolTip="将所有页面按顺序 P01, P02... 导出为无损 PNG" />
+                                        </UniformGrid>
+                                        <Button Content="导出全部页为多页物理尺寸 PDF" Style="{StaticResource ModernButton}" Height="28" Command="{Binding ExportAllToPdfCommand}" />
+
+                                        <StackPanel Visibility="{Binding ActiveScenario, Converter={StaticResource EnumToVis}, ConverterParameter=IdPhoto}">
+                                            <Separator Background="{DynamicResource BrushBorderSubtle}" Margin="0,10,0,8" />
+                                            <TextBlock Text="单张电子证件照" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,5" />
+                                            <Grid Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="6" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <ComboBox Grid.Column="0"
+                                                          ItemsSource="{Binding DigitalIdMaxSizeKbOptions}"
+                                                          DisplayMemberPath="Value"
+                                                          SelectedValuePath="Key"
+                                                          SelectedValue="{Binding DigitalIdMaxSizeKb, Mode=TwoWay}"
+                                                          ToolTip="根据所选上限调整 JPEG 品质" />
+                                                <Button Grid.Column="2" Content="导出电子照 JPG" Style="{StaticResource ModernButton}" Height="28" Padding="10,0"
+                                                        IsEnabled="{Binding HasSelectedAsset}"
+                                                        Command="{Binding ExportDigitalIdPhotoCommand}" />
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <StackPanel Margin="0,8,0,0" Visibility="{Binding IsExportBusy, Converter={StaticResource BoolToVis}}">
+                                            <DockPanel Margin="0,0,0,4">
+                                                <Button DockPanel.Dock="Right" Content="取消" Style="{StaticResource GhostButton}" Padding="6,1" FontSize="10.5" Command="{Binding CancelExportCommand}" />
+                                                <TextBlock Text="{Binding ExportProgressText}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                            </DockPanel>
+                                            <ProgressBar Height="5" Minimum="0" Maximum="100" Value="{Binding ExportProgressPercent}"
+                                                         IsIndeterminate="{Binding IsExportIndeterminate}" Foreground="{DynamicResource BrushAccent}" />
+                                        </StackPanel>
+                                        <Button Content="打开上次导出文件夹" Style="{StaticResource GhostButton}" Command="{Binding OpenLastExportFolderCommand}"
+                                                HorizontalAlignment="Left" Visibility="{Binding HasLastExportDirectory, Converter={StaticResource BoolToVis}}" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Tier 3: 专业硬件校准、双面定位与 ICC 软打样（折叠收纳） -->
+                                <Expander Header="设备校准" Style="{StaticResource StudioExpander}" IsExpanded="False" Margin="0">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding PrinterHardwareSummary}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="10.5" TextWrapping="Wrap" Margin="0,0,0,6" />
+                                        <CheckBox Content="已在驱动中开启无边距（忽略边距提醒）" IsChecked="{Binding PrinterBorderless}" Margin="0,0,0,8" />
+
+                                        <UniformGrid Rows="1" Margin="0,0,0,6">
+                                            <Button Style="{StaticResource ModernButton}" Height="28" Margin="0,0,4,0" Click="OpenCalibrationDialog_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Path Data="{StaticResource IconCalibration}" Style="{StaticResource VecIcon}" Width="12" Height="12" Margin="0,0,5,0" />
+                                                    <TextBlock Text="校准向导" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Content="打印 3合1 测试卡" Style="{StaticResource ModernButton}" Height="28" Margin="4,0,0,0" Command="{Binding PrintCalibrationCardCommand}" />
+                                        </UniformGrid>
+                                        <Button Content="打开打印机原生驱动首选项 (纸型/质量/无边距)" Style="{StaticResource ModernButton}" Height="28" Margin="0,0,0,6" Click="OpenPrinterPreferences_Click" />
+                                        <Button Content="双面翻页打印背面 (卡证对齐)" Style="{StaticResource ModernButton}" Height="28" Margin="0,0,0,10" Command="{Binding PrintDuplexBackSheetCommand}" />
+
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                </TabControl>
+            </Border>
+        </Grid>
+
+        <!-- ==================== 3. 底部极简系统状态栏 ==================== -->
+        <Border Grid.Row="2" Background="{DynamicResource BrushBgHeader}"
+                BorderBrush="{DynamicResource BrushBorderSubtle}" BorderThickness="0,1,0,0" Padding="12,0">
+            <DockPanel LastChildFill="False">
+                <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center"
+                           Text="{Binding StatusText}" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" />
+                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center"
+                           Foreground="{DynamicResource BrushTextMuted}" FontSize="10.5">
+                    <Run Text="光影印坊" />
+                </TextBlock>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

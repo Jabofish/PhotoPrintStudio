@@ -1,0 +1,23 @@
+﻿<Application x:Class="PhotoPrintStudio.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:helpers="clr-namespace:PhotoPrintStudio.App.Helpers">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/DarkTheme.xaml" />
+                <ResourceDictionary Source="Themes/Icons.xaml" />
+                <ResourceDictionary Source="Themes/Controls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <helpers:BoolToVisibilityConverter x:Key="BoolToVis" />
+            <helpers:BoolToVisibilityConverter x:Key="InverseBoolToVis" Invert="True" />
+            <helpers:InverseBoolConverter x:Key="InverseBool" />
+            <helpers:EnumEqualsConverter x:Key="EnumEquals" />
+            <helpers:EnumToVisibilityConverter x:Key="EnumToVis" />
+            <helpers:IntZeroToVisibilityConverter x:Key="IntZeroToVis" />
+            <helpers:IntEqualsConverter x:Key="IntEquals" />
+            <helpers:IntEqualsToVisibilityConverter x:Key="IntEqualsToVis" />
+            <helpers:HexToBrushConverter x:Key="HexToBrush" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
