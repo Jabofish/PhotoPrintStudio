@@ -5,10 +5,12 @@ namespace PhotoPrintStudio.App.Views;
 
 public partial class PromptInputDialog : Window
 {
+    private readonly bool _allowEmpty;
     public string InputText => InputBox.Text.Trim();
 
-    public PromptInputDialog(string title, string label, string defaultText, bool isDarkTheme)
+    public PromptInputDialog(string title, string label, string defaultText, bool isDarkTheme, bool allowEmpty = false)
     {
+        _allowEmpty = allowEmpty;
         InitializeComponent();
         Title = title;
         PromptLabel.Text = label;
@@ -29,9 +31,9 @@ public partial class PromptInputDialog : Window
 
     private void Ok_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(InputBox.Text))
+        if (!_allowEmpty && string.IsNullOrWhiteSpace(InputBox.Text))
         {
-            MessageBox.Show(this, "名称不能为空。", "提示", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "名称不能为空。", Title, MessageBoxButton.OK, MessageBoxImage.Information);
             InputBox.Focus();
             return;
         }

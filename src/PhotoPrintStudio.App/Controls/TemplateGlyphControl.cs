@@ -30,7 +30,9 @@ public sealed class TemplateGlyphControl : FrameworkElement
         if (w <= 4 || h <= 4) return;
 
         var paper = PaperSizeSpec.BuiltInPapers.FirstOrDefault(p => p.Id == Template.DefaultPaperId)
-                    ?? PaperSizeSpec.BuiltInPapers[0];
+                    ?? (Template.CustomPaperWidthMm is > 10 and double cw && Template.CustomPaperHeightMm is > 10 and double ch
+                        ? new PaperSizeSpec(Template.DefaultPaperId, "自定义", cw, ch, "自定义", "", false)
+                        : PaperSizeSpec.BuiltInPapers[0]);
         var sheet = LayoutEngine.BuildSheet(Template, paper);
 
         double scale = Math.Min((w - 6) / sheet.PaperWidthMm, (h - 6) / sheet.PaperHeightMm);
@@ -43,9 +45,8 @@ public sealed class TemplateGlyphControl : FrameworkElement
         var paperBorder = new Pen(TryFindResource("BrushBorderStrong") as Brush ?? Brushes.Gray, 1);
         dc.DrawRoundedRectangle(paperBg, paperBorder, new Rect(ox, oy, pw, ph), 2, 2);
 
-        var accentBrush = TryFindResource("BrushAccent") as SolidColorBrush ?? new SolidColorBrush(Color.FromRgb(59, 130, 246));
-        var slotFill = new SolidColorBrush(Color.FromArgb(65, accentBrush.Color.R, accentBrush.Color.G, accentBrush.Color.B));
-        var slotPen = new Pen(accentBrush, 0.9);
+        var slotFill = new SolidColorBrush(Color.FromArgb(70, 120, 120, 120));
+        var slotPen = new Pen(new SolidColorBrush(Color.FromRgb(120, 120, 120)), 0.9);
 
         foreach (var s in sheet.Slots)
         {

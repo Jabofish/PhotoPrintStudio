@@ -16,14 +16,14 @@ public sealed class HistogramControl : FrameworkElement
         set => SetValue(HistogramProperty, value);
     }
 
-    private static readonly Brush FallbackBgBrush = Freeze(new SolidColorBrush(Color.FromRgb(24, 26, 32)));
-    private static readonly Brush FallbackBorderBrush = Freeze(new SolidColorBrush(Color.FromRgb(45, 50, 62)));
-    private static readonly Pen GridPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(40, 148, 163, 184))), 1));
+    private static readonly Brush FallbackBgBrush = Freeze(new SolidColorBrush(Color.FromRgb(28, 28, 28)));
+    private static readonly Brush FallbackBorderBrush = Freeze(new SolidColorBrush(Color.FromRgb(51, 51, 51)));
+    private static readonly Pen GridPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(40, 160, 160, 160))), 1));
     private static readonly (Brush Fill, Pen Stroke) RedStyle = MakeChannelStyle(Color.FromArgb(75, 239, 68, 68), Color.FromArgb(165, 239, 68, 68));
     private static readonly (Brush Fill, Pen Stroke) GreenStyle = MakeChannelStyle(Color.FromArgb(75, 34, 197, 94), Color.FromArgb(165, 34, 197, 94));
     private static readonly (Brush Fill, Pen Stroke) BlueStyle = MakeChannelStyle(Color.FromArgb(75, 59, 130, 246), Color.FromArgb(165, 59, 130, 246));
-    private static readonly (Brush Fill, Pen Stroke) LumaDarkStyle = MakeChannelStyle(Color.FromArgb(65, 226, 232, 240), Color.FromArgb(200, 226, 232, 240));
-    private static readonly (Brush Fill, Pen Stroke) LumaLightStyle = MakeChannelStyle(Color.FromArgb(55, 71, 85, 105), Color.FromArgb(170, 51, 65, 85));
+    private static readonly (Brush Fill, Pen Stroke) LumaDarkStyle = MakeChannelStyle(Color.FromArgb(65, 230, 230, 230), Color.FromArgb(200, 230, 230, 230));
+    private static readonly (Brush Fill, Pen Stroke) LumaLightStyle = MakeChannelStyle(Color.FromArgb(55, 85, 85, 85), Color.FromArgb(170, 60, 60, 60));
 
     private static T Freeze<T>(T freezable) where T : Freezable
     {

@@ -330,50 +330,20 @@ public class AppViewModelAndInteropTests
     }
 
     [Fact]
-    public void WindowsPrintService_ComputePrintDrawRect_ShouldCoverBorderlessOverscanAndKeepExactPhysicalScaleOtherwise()
+    public void WindowsPrintService_ComputePrintDrawRect_ShouldKeepExactSizeForEveryPaper()
     {
-        // 1. 无边距过扫描画幅 (416x624 vs 400x600)：满幅模式应等比铺满过扫描区，避免右/底留白
-        var overscanRect = WindowsPrintService.ComputePrintDrawRect(
-            101.6, 152.4, hardMarginX: 0f, hardMarginY: 0f,
-            pageBounds: new Rectangle(0, 0, 416, 624), allowBorderlessOverscanFill: true);
-        Assert.Equal(0f, overscanRect.X, 2);
-        Assert.Equal(0f, overscanRect.Y, 2);
-        Assert.Equal(416f, overscanRect.Width, 2);
-        Assert.Equal(624f, overscanRect.Height, 2);
-
-        // 2. 纸型不匹配（如 6寸画布落在 A4 页面 827x1169 上）：绝不放大铺满，保持精确 400x600 物理尺寸
-        var a4MismatchRect = WindowsPrintService.ComputePrintDrawRect(
-            101.6, 152.4, hardMarginX: 0f, hardMarginY: 0f,
-            pageBounds: new Rectangle(0, 0, 827, 1169), allowBorderlessOverscanFill: true);
-        Assert.Equal(0f, a4MismatchRect.X, 2);
-        Assert.Equal(0f, a4MismatchRect.Y, 2);
-        Assert.Equal(400f, a4MismatchRect.Width, 2);
-        Assert.Equal(600f, a4MismatchRect.Height, 2);
-
-        // 3. 常规有硬边距打印机或校准测试卡：按 -HardMargin 偏移并保持精确物理尺寸
-        var borderedRect = WindowsPrintService.ComputePrintDrawRect(
-            101.6, 152.4, hardMarginX: 12f, hardMarginY: 12f,
-            pageBounds: new Rectangle(0, 0, 400, 600), allowBorderlessOverscanFill: true);
-        Assert.Equal(-12f, borderedRect.X, 2);
-        Assert.Equal(-12f, borderedRect.Y, 2);
-        Assert.Equal(400f, borderedRect.Width, 2);
-        Assert.Equal(600f, borderedRect.Height, 2);
-
-        // 4. SheetTouchesPaperEdge 判定：外边距 0 为 true，外边距 5mm 为 false
-        var fullBleedSheet = new PrintSheet
+        foreach (var paper in PaperSizeSpec.BuiltInPapers)
         {
-            PaperWidthMm = 101.6,
-            PaperHeightMm = 152.4,
-            Slots = [new LayoutSlot { XMm = 0, YMm = 0, WidthMm = 101.6, HeightMm = 152.4 }]
-        };
-        var borderedSheet = new PrintSheet
-        {
-            PaperWidthMm = 101.6,
-            PaperHeightMm = 152.4,
-            Slots = [new LayoutSlot { XMm = 5, YMm = 5, WidthMm = 91.6, HeightMm = 142.4 }]
-        };
-        Assert.True(WindowsPrintService.SheetTouchesPaperEdge(fullBleedSheet));
-        Assert.False(WindowsPrintService.SheetTouchesPaperEdge(borderedSheet));
+            var portrait = WindowsPrintService.ComputePrintDrawRect(paper.WidthMm, paper.HeightMm, 0f, 0f);
+            Assert.Equal(paper.WidthMm, portrait.Width * 25.4, 3);
+            Assert.Equal(paper.HeightMm, portrait.Height * 25.4, 3);
+
+            var landscape = WindowsPrintService.ComputePrintDrawRect(paper.HeightMm, paper.WidthMm, 12f, 9f);
+            Assert.Equal(-0.12f, landscape.X, 3);
+            Assert.Equal(-0.09f, landscape.Y, 3);
+            Assert.Equal(paper.HeightMm, landscape.Width * 25.4, 3);
+            Assert.Equal(paper.WidthMm, landscape.Height * 25.4, 3);
+        }
     }
 
     [Fact]

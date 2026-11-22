@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using PhotoPrintStudio.Core.Imaging;
+using PhotoPrintStudio.Core.Layout;
 using PhotoPrintStudio.Core.Models;
 using SkiaSharp;
 
@@ -60,6 +61,7 @@ public static class SheetRenderer
         Func<PhotoAsset, PhotoEditState, SKBitmap> resolveProcessedBitmap,
         SheetRenderOptions options)
     {
+        if (!options.IsScreenPreview) FreeformLayoutMath.ValidateOutput(sheet);
         int widthPx = UnitConverter.MmToPixelsRounded(sheet.PaperWidthMm, options.Dpi);
         int heightPx = UnitConverter.MmToPixelsRounded(sheet.PaperHeightMm, options.Dpi);
 
@@ -98,6 +100,8 @@ public static class SheetRenderer
         Func<PhotoAsset, PhotoEditState, SKBitmap> resolveProcessedBitmap,
         SheetRenderOptions options)
     {
+        if (!options.IsScreenPreview) FreeformLayoutMath.ValidateOutput(sheet);
+
         float pxPerMm = (float)(options.Dpi / UnitConverter.MmPerInch);
         float paperW = (float)sheet.PaperWidthMm * pxPerMm;
         float paperH = (float)sheet.PaperHeightMm * pxPerMm;
@@ -111,15 +115,11 @@ public static class SheetRenderer
         if (options.ApplyPrinterCalibrationTransform && options.PrinterCalibration != null)
         {
             var cal = options.PrinterCalibration;
-            double overscan = Math.Clamp(cal.OverscanCompensationPercent / 100.0, 0.85, 1.15);
-            float sx = (float)(cal.ScaleXPercent / 100.0 * overscan);
-            float sy = (float)(cal.ScaleYPercent / 100.0 * overscan);
-            float dxMm = (float)(cal.OffsetXMm + (options.DuplexMirrorBackSide ? cal.DuplexBackOffsetXMm : 0));
-            float dyMm = (float)(cal.OffsetYMm + (options.DuplexMirrorBackSide ? cal.DuplexBackOffsetYMm : 0));
+            var (sx, sy, dxMm, dyMm) = cal.GetGeometryTransform(options.DuplexMirrorBackSide);
 
-            canvas.Translate(dxMm * pxPerMm, dyMm * pxPerMm);
+            canvas.Translate((float)dxMm * pxPerMm, (float)dyMm * pxPerMm);
             canvas.Translate(paperW * 0.5f, paperH * 0.5f);
-            canvas.Scale(sx, sy);
+            canvas.Scale((float)sx, (float)sy);
             canvas.Translate(-paperW * 0.5f, -paperH * 0.5f);
         }
 
@@ -174,7 +174,7 @@ public static class SheetRenderer
         // 4. 屏幕预览辅助叠加层（安全边距、出血虚线、选中框）
         if (options.IsScreenPreview)
         {
-            DrawPreviewOverlays(canvas, sheet, options, pxPerMm, paperW, paperH);
+            DrawPreviewOverlays(canvas, sheet, options, pxPerMm, paperW, paperH, resolvedCache.Count > 0);
         }
 
         canvas.Restore();
@@ -220,6 +220,12 @@ public static class SheetRenderer
         {
             foreach (var other in sheet.Slots.Where(s => !ReferenceEquals(s, slot)))
             {
+                bool coreOverlaps =
+                    slot.XMm < other.XMm + other.WidthMm - 0.01 &&
+                    slot.XMm + slot.WidthMm > other.XMm + 0.01 &&
+                    slot.YMm < other.YMm + other.HeightMm - 0.01 &&
+                    slot.YMm + slot.HeightMm > other.YMm + 0.01;
+                if (coreOverlaps) continue;
                 canvas.ClipRect(new SKRect((float)other.XMm * pxPerMm, (float)other.YMm * pxPerMm,
                     (float)(other.XMm + other.WidthMm) * pxPerMm, (float)(other.YMm + other.HeightMm) * pxPerMm), SKClipOperation.Difference);
             }
@@ -230,13 +236,13 @@ public static class SheetRenderer
             var effectiveEdit = BuildEffectiveEdit(asset.EditState, options);
 
             canvas.Save();
-            if (Math.Abs(slot.SlotRotationDegrees) > 0.1)
+            if (Math.Abs(slot.SlotRotationDegrees % 360.0) > 0.1)
             {
                 canvas.RotateDegrees((float)slot.SlotRotationDegrees, x + w * 0.5f, y + h * 0.5f);
             }
 
-            // 若格位旋转 90 度，则局部可用矩形宽高互换
-            bool slotSwapped = Math.Abs(Math.Abs(slot.SlotRotationDegrees) - 90.0) < 1.0;
+            // 若格位旋转 90° 或 270°，则局部可用矩形宽高互换
+            bool slotSwapped = slot.IsQuarterTurnRotated;
             float localW = slotSwapped ? h + bleed * 2 : w + bleed * 2;
             float localH = slotSwapped ? w + bleed * 2 : h + bleed * 2;
             var localRect = new SKRect(
@@ -278,10 +284,12 @@ public static class SheetRenderer
         }
         else if (options.IsScreenPreview)
         {
-            DrawEmptySlotPlaceholder(canvas, new SKRect(x, y, x + w, y + h), slot.Label, pxPerMm);
+            DrawEmptySlotPlaceholder(canvas, new SKRect(x, y,
+                (float)(slot.XMm + slot.WidthMm) * pxPerMm,
+                (float)(slot.YMm + slot.HeightMm) * pxPerMm), slot.Label, pxPerMm);
         }
 
-        // Before/After 对比角标或自定义标签
+        // 格位自定义标注
         if (!string.IsNullOrWhiteSpace(slot.CustomCaption))
         {
             DrawSlotCaptionPill(canvas, new SKRect(x, y, x + w, y + h), slot.CustomCaption!, pxPerMm);
@@ -305,7 +313,7 @@ public static class SheetRenderer
         float slotW = (float)slot.WidthMm * pxPerMm;
         float slotH = (float)slot.HeightMm * pxPerMm;
 
-        bool rotated = Math.Abs(Math.Abs(slot.SlotRotationDegrees) - 90.0) < 1.0;
+        bool rotated = slot.IsQuarterTurnRotated;
         float cardW = rotated ? slotH : slotW;
         float cardH = rotated ? slotW : slotH;
         float cx = x + slotW * 0.5f;
@@ -314,7 +322,7 @@ public static class SheetRenderer
         float cornerR = (float)slot.CornerRadiusMm * pxPerMm;
 
         canvas.Save();
-        if (rotated)
+        if (Math.Abs(slot.SlotRotationDegrees % 360.0) > 0.1)
             canvas.RotateDegrees((float)slot.SlotRotationDegrees, cx, cy);
 
         // 外卡圆角裁剪
@@ -461,7 +469,7 @@ public static class SheetRenderer
         float effW = quarterSwap ? ih : iw;
         float effH = quarterSwap ? iw : ih;
 
-        var fitMode = slot.FitModeOverride ?? edit.FitMode;
+        var fitMode = slot.EffectiveFitMode ?? edit.FitMode;
         float baseScale = fitMode == FitMode.Cover
             ? Math.Max(destRect.Width / effW, destRect.Height / effH)
             : Math.Min(destRect.Width / effW, destRect.Height / effH);
@@ -710,10 +718,11 @@ public static class SheetRenderer
         canvas.DrawRect(startX, y, 11 * stepW, stepH, borderPaint);
     }
 
-    private static void DrawPreviewOverlays(SKCanvas canvas, PrintSheet sheet, SheetRenderOptions options, float pxPerMm, float paperW, float paperH)
+    private static void DrawPreviewOverlays(SKCanvas canvas, PrintSheet sheet, SheetRenderOptions options,
+        float pxPerMm, float paperW, float paperH, bool hasPlacedPhoto)
     {
         // 打印机硬件安全边距提示框
-        if (options.ShowSafeMarginOverlay && options.SafeMarginMm > 0.2)
+        if (hasPlacedPhoto && options.ShowSafeMarginOverlay && options.SafeMarginMm > 0.2)
         {
             float m = (float)options.SafeMarginMm * pxPerMm;
             using var safeDash = SKPathEffect.CreateDash([2.5f * pxPerMm, 2.0f * pxPerMm], 0);
@@ -804,7 +813,7 @@ public static class SheetRenderer
         if (Math.Abs(slotRotDeg) > 0.1)
             canvas.RotateDegrees((float)slotRotDeg, rect.MidX, rect.MidY);
 
-        bool swapped = Math.Abs(Math.Abs(slotRotDeg) - 90.0) < 1.0;
+        bool swapped = LayoutSlot.IsQuarterTurnRotation(slotRotDeg);
         float w = swapped ? rect.Height : rect.Width;
         float h = swapped ? rect.Width : rect.Height;
         var upright = new SKRect(rect.MidX - w * 0.5f, rect.MidY - h * 0.5f, rect.MidX + w * 0.5f, rect.MidY + h * 0.5f);
@@ -856,7 +865,7 @@ public static class SheetRenderer
         int srcH,
         float pxPerMm)
     {
-        var fitMode = slot.FitModeOverride ?? edit.FitMode;
+        var fitMode = slot.EffectiveFitMode ?? edit.FitMode;
         using var boxDash = SKPathEffect.CreateDash([1.4f * pxPerMm, 1.2f * pxPerMm], 0);
         using var boxPaint = new SKPaint
         {
@@ -911,7 +920,8 @@ public static class SheetRenderer
         using var fill = new SKPaint { Color = new SKColor(241, 245, 249), Style = SKPaintStyle.Fill };
         canvas.DrawRect(rect, fill);
 
-        using var emptyDash = SKPathEffect.CreateDash([2f * pxPerMm, 2f * pxPerMm], 0);
+        float dashLength = 2f * pxPerMm;
+        using var emptyDash = SKPathEffect.CreateDash([dashLength, dashLength], 0);
         using var stroke = new SKPaint
         {
             Color = new SKColor(148, 163, 184),
@@ -919,7 +929,17 @@ public static class SheetRenderer
             StrokeWidth = Math.Max(1f, 0.2f * pxPerMm),
             PathEffect = emptyDash
         };
-        canvas.DrawRect(rect, stroke);
+        // 相邻格位共用同一虚线起点，各自在边界内画半条线。
+        float period = dashLength * 2;
+        float dashStartX = MathF.Floor(rect.Left / period) * period;
+        float dashStartY = MathF.Floor(rect.Top / period) * period;
+        canvas.Save();
+        canvas.ClipRect(rect);
+        canvas.DrawLine(dashStartX, rect.Top, rect.Right, rect.Top, stroke);
+        canvas.DrawLine(dashStartX, rect.Bottom, rect.Right, rect.Bottom, stroke);
+        canvas.DrawLine(rect.Left, dashStartY, rect.Left, rect.Bottom, stroke);
+        canvas.DrawLine(rect.Right, dashStartY, rect.Right, rect.Bottom, stroke);
+        canvas.Restore();
 
         var typeface = GetCachedTypeface("Microsoft YaHei UI");
         float fontSize = Math.Clamp(Math.Min(rect.Width, rect.Height) * 0.12f, 9f, 18f);

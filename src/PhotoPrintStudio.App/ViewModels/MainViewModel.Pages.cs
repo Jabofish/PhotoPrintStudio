@@ -10,6 +10,66 @@ public partial class MainViewModel
 
     internal bool HasRemovableEmptySheets => Sheets.Count > 1 && Sheets.Any(IsEmptySheet);
 
+    internal static bool HasPlacedPhotos(PrintSheet? sheet) =>
+        sheet?.Slots.Any(slot => !string.IsNullOrEmpty(slot.PhotoAssetId)) == true;
+
+    internal int ClearSheetsSlots(IReadOnlyCollection<PrintSheet> selected)
+    {
+        var targets = Sheets.Where(selected.Contains)
+            .SelectMany(sheet => sheet.Slots)
+            .Where(slot => !string.IsNullOrEmpty(slot.PhotoAssetId))
+            .ToList();
+        if (targets.Count == 0) return 0;
+
+        PushUndoSnapshot();
+        foreach (var slot in targets)
+            ClearSlotPlacement(slot);
+
+        if (ViewMode != CanvasViewMode.SheetOverview && !HasPlacedPhotos(ActiveSheet))
+        {
+            ViewMode = CanvasViewMode.SheetOverview;
+            IsTwoPointStraightenActive = false;
+            UpdateToolBanner();
+        }
+
+        UpdateAssetUsageCounts();
+        UpdateActiveTargetContext();
+        UpdatePreflight();
+        PagePreviewsInvalidated?.Invoke();
+        ScheduleRender();
+        return targets.Count;
+    }
+
+    internal bool MoveSheet(PrintSheet sheet, int delta)
+    {
+        int oldIndex = Sheets.IndexOf(sheet);
+        int newIndex = oldIndex + delta;
+        if (oldIndex < 0 || newIndex < 0 || newIndex >= Sheets.Count || oldIndex == newIndex) return false;
+
+        PushUndoSnapshot();
+        Sheets.Move(oldIndex, newIndex);
+        for (int i = 0; i < Sheets.Count; i++) Sheets[i].SheetName = $"第 {i + 1} 页";
+        ActiveSheetIndex = Sheets.IndexOf(ActiveSheet ?? sheet);
+        PagePreviewsInvalidated?.Invoke();
+        ShowToast($"已将页面移至第 {newIndex + 1} 页，可撤销");
+        return true;
+    }
+
+    internal void InsertBlankSheetAfter(PrintSheet referenceSheet)
+    {
+        int index = Sheets.IndexOf(referenceSheet);
+        if (index < 0) return;
+
+        PushUndoSnapshot();
+        var next = referenceSheet.Clone();
+        foreach (var slot in next.Slots) ClearSlotPlacement(slot);
+        int insertAt = index + 1;
+        Sheets.Insert(insertAt, next);
+        for (int i = 0; i < Sheets.Count; i++) Sheets[i].SheetName = $"第 {i + 1} 页";
+        SwitchToSheet(insertAt);
+        ShowToast($"已新增空白页（第 {insertAt + 1} 页），可撤销");
+    }
+
     internal void RemoveEmptySheets()
     {
         int removed = RemoveSheets(Sheets.Where(IsEmptySheet).ToArray());
@@ -45,6 +105,18 @@ public partial class MainViewModel
         string? activeId = ActiveSheet?.Id;
         foreach (var previous in Sheets)
         {
+            if (previous.IsCustomFreeform)
+            {
+                var resized = ResizeFreeformPage(previous, paper, previous.IsLandscape);
+                if (!FreeformLayoutMath.CanOutput(resized))
+                {
+                    ShowToast($"{previous.SheetName} 的自由版式放不进所选纸张，页面尺寸未更改。");
+                    return false;
+                }
+                pages.Add(resized);
+                continue;
+            }
+
             var template = previous.Scenario == LayoutScenario.SinglePhoto && singlePhotoTemplate != null
                 ? singlePhotoTemplate
                 : _allTemplates.FirstOrDefault(t => t.Id == previous.TemplateId);

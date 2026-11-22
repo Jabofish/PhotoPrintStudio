@@ -47,8 +47,8 @@ public sealed class PhysicalRulerControl : FrameworkElement
     }
 
     private static readonly Typeface RulerTypeface = new("Segoe UI");
-    private static readonly Brush FallbackBgBrush = Freeze(new SolidColorBrush(Color.FromRgb(24, 26, 32)));
-    private static readonly Brush FallbackTickBrush = Freeze(new SolidColorBrush(Color.FromRgb(110, 120, 138)));
+    private static readonly Brush FallbackBgBrush = Freeze(new SolidColorBrush(Color.FromRgb(28, 28, 28)));
+    private static readonly Brush FallbackTickBrush = Freeze(new SolidColorBrush(Color.FromRgb(126, 126, 126)));
 
     private static T Freeze<T>(T freezable) where T : Freezable
     {

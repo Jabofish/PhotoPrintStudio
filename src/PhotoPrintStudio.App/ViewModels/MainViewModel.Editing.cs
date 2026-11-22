@@ -36,42 +36,42 @@ public partial class MainViewModel
     public ToneCurveData ActiveToneCurves => CurrentEdit?.ToneCurves ?? new ToneCurveData();
 
     // === 光影曝光 ===
-    public double EditExposure { get => CurrentEdit?.Exposure ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Exposure = value; OnEditMutated(); } } }
-    public double EditBrightness { get => CurrentEdit?.Brightness ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Brightness = value; OnEditMutated(); } } }
-    public double EditContrast { get => CurrentEdit?.Contrast ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Contrast = value; OnEditMutated(); } } }
-    public double EditHighlights { get => CurrentEdit?.Highlights ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Highlights = value; OnEditMutated(); } } }
-    public double EditShadows { get => CurrentEdit?.Shadows ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Shadows = value; OnEditMutated(); } } }
-    public double EditWhites { get => CurrentEdit?.Whites ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Whites = value; OnEditMutated(); } } }
-    public double EditBlacks { get => CurrentEdit?.Blacks ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Blacks = value; OnEditMutated(); } } }
-    public double EditGamma { get => CurrentEdit?.Gamma ?? 1.0; set { if (CurrentEdit != null) { CurrentEdit.Gamma = value; OnEditMutated(); } } }
+    public double EditExposure { get => CurrentEdit?.Exposure ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Exposure - value) > 1e-9) { CurrentEdit.Exposure = value; OnEditMutated(); } } }
+    public double EditBrightness { get => CurrentEdit?.Brightness ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Brightness - value) > 1e-9) { CurrentEdit.Brightness = value; OnEditMutated(); } } }
+    public double EditContrast { get => CurrentEdit?.Contrast ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Contrast - value) > 1e-9) { CurrentEdit.Contrast = value; OnEditMutated(); } } }
+    public double EditHighlights { get => CurrentEdit?.Highlights ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Highlights - value) > 1e-9) { CurrentEdit.Highlights = value; OnEditMutated(); } } }
+    public double EditShadows { get => CurrentEdit?.Shadows ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Shadows - value) > 1e-9) { CurrentEdit.Shadows = value; OnEditMutated(); } } }
+    public double EditWhites { get => CurrentEdit?.Whites ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Whites - value) > 1e-9) { CurrentEdit.Whites = value; OnEditMutated(); } } }
+    public double EditBlacks { get => CurrentEdit?.Blacks ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Blacks - value) > 1e-9) { CurrentEdit.Blacks = value; OnEditMutated(); } } }
+    public double EditGamma { get => CurrentEdit?.Gamma ?? 1.0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Gamma - value) > 1e-9) { CurrentEdit.Gamma = value; OnEditMutated(); } } }
 
     // === 色阶 ===
-    public double EditInputBlack { get => CurrentEdit?.InputBlack ?? 0; set { if (CurrentEdit != null) { CurrentEdit.InputBlack = value; OnEditMutated(); } } }
-    public double EditInputWhite { get => CurrentEdit?.InputWhite ?? 255; set { if (CurrentEdit != null) { CurrentEdit.InputWhite = value; OnEditMutated(); } } }
-    public double EditOutputBlack { get => CurrentEdit?.OutputBlack ?? 0; set { if (CurrentEdit != null) { CurrentEdit.OutputBlack = value; OnEditMutated(); } } }
-    public double EditOutputWhite { get => CurrentEdit?.OutputWhite ?? 255; set { if (CurrentEdit != null) { CurrentEdit.OutputWhite = value; OnEditMutated(); } } }
+    public double EditInputBlack { get => CurrentEdit?.InputBlack ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.InputBlack - value) > 1e-9) { CurrentEdit.InputBlack = value; OnEditMutated(); } } }
+    public double EditInputWhite { get => CurrentEdit?.InputWhite ?? 255; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.InputWhite - value) > 1e-9) { CurrentEdit.InputWhite = value; OnEditMutated(); } } }
+    public double EditOutputBlack { get => CurrentEdit?.OutputBlack ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.OutputBlack - value) > 1e-9) { CurrentEdit.OutputBlack = value; OnEditMutated(); } } }
+    public double EditOutputWhite { get => CurrentEdit?.OutputWhite ?? 255; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.OutputWhite - value) > 1e-9) { CurrentEdit.OutputWhite = value; OnEditMutated(); } } }
 
     // === 白平衡与色彩 ===
-    public double EditTemperature { get => CurrentEdit?.Temperature ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Temperature = value; OnEditMutated(); } } }
-    public double EditTint { get => CurrentEdit?.Tint ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Tint = value; OnEditMutated(); } } }
-    public double EditVibrance { get => CurrentEdit?.Vibrance ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Vibrance = value; OnEditMutated(); } } }
-    public double EditSaturation { get => CurrentEdit?.Saturation ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Saturation = value; OnEditMutated(); } } }
+    public double EditTemperature { get => CurrentEdit?.Temperature ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Temperature - value) > 1e-9) { CurrentEdit.Temperature = value; OnEditMutated(); } } }
+    public double EditTint { get => CurrentEdit?.Tint ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Tint - value) > 1e-9) { CurrentEdit.Tint = value; OnEditMutated(); } } }
+    public double EditVibrance { get => CurrentEdit?.Vibrance ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Vibrance - value) > 1e-9) { CurrentEdit.Vibrance = value; OnEditMutated(); } } }
+    public double EditSaturation { get => CurrentEdit?.Saturation ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Saturation - value) > 1e-9) { CurrentEdit.Saturation = value; OnEditMutated(); } } }
 
     // === HSL 八色相 ===
     public double HslHue
     {
         get => CurrentEdit?.Hsl.GetByIndex(ActiveHslChannel).Hue ?? 0;
-        set { if (CurrentEdit != null) { CurrentEdit.Hsl.GetByIndex(ActiveHslChannel).Hue = value; OnEditMutated(); } }
+        set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Hsl.GetByIndex(ActiveHslChannel).Hue - value) > 1e-9) { CurrentEdit.Hsl.GetByIndex(ActiveHslChannel).Hue = value; OnEditMutated(); } }
     }
     public double HslSaturation
     {
         get => CurrentEdit?.Hsl.GetByIndex(ActiveHslChannel).Saturation ?? 0;
-        set { if (CurrentEdit != null) { CurrentEdit.Hsl.GetByIndex(ActiveHslChannel).Saturation = value; OnEditMutated(); } }
+        set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Hsl.GetByIndex(ActiveHslChannel).Saturation - value) > 1e-9) { CurrentEdit.Hsl.GetByIndex(ActiveHslChannel).Saturation = value; OnEditMutated(); } }
     }
     public double HslLightness
     {
         get => CurrentEdit?.Hsl.GetByIndex(ActiveHslChannel).Lightness ?? 0;
-        set { if (CurrentEdit != null) { CurrentEdit.Hsl.GetByIndex(ActiveHslChannel).Lightness = value; OnEditMutated(); } }
+        set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Hsl.GetByIndex(ActiveHslChannel).Lightness - value) > 1e-9) { CurrentEdit.Hsl.GetByIndex(ActiveHslChannel).Lightness = value; OnEditMutated(); } }
     }
 
     partial void OnActiveHslChannelChanged(int value)
@@ -82,26 +82,64 @@ public partial class MainViewModel
     }
 
     // === 细节、柔肤与滤镜 ===
-    public double EditClarity { get => CurrentEdit?.Clarity ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Clarity = value; OnEditMutated(); } } }
-    public double EditSharpening { get => CurrentEdit?.Sharpening ?? 0; set { if (CurrentEdit != null) { CurrentEdit.Sharpening = value; OnEditMutated(); } } }
-    public double EditSkinSoftening { get => CurrentEdit?.SkinSoftening ?? 0; set { if (CurrentEdit != null) { CurrentEdit.SkinSoftening = value; OnEditMutated(); } } }
-    public double EditFilterIntensity { get => CurrentEdit?.FilterIntensity ?? 100; set { if (CurrentEdit != null) { CurrentEdit.FilterIntensity = value; OnEditMutated(); } } }
+    public double EditClarity { get => CurrentEdit?.Clarity ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Clarity - value) > 1e-9) { CurrentEdit.Clarity = value; OnEditMutated(); } } }
+    public double EditSharpening { get => CurrentEdit?.Sharpening ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Sharpening - value) > 1e-9) { CurrentEdit.Sharpening = value; OnEditMutated(); } } }
+    public double EditSkinSoftening { get => CurrentEdit?.SkinSoftening ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.SkinSoftening - value) > 1e-9) { CurrentEdit.SkinSoftening = value; OnEditMutated(); } } }
+    public double EditFilterIntensity { get => CurrentEdit?.FilterIntensity ?? 100; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.FilterIntensity - value) > 1e-9) { CurrentEdit.FilterIntensity = value; OnEditMutated(); } } }
 
     public string EditFilterId
     {
         get => CurrentEdit?.FilterPresetId ?? "none";
-        set { if (CurrentEdit != null) { CurrentEdit.FilterPresetId = value; OnEditMutated(); } }
+        set
+        {
+            if (CurrentEdit == null || string.IsNullOrWhiteSpace(value)) return;
+            if (string.Equals(CurrentEdit.FilterPresetId, value, StringComparison.OrdinalIgnoreCase)) return;
+            if (_pendingUndoSnapshot == null) PushUndoSnapshot();
+            CurrentEdit.FilterPresetId = value;
+            if (string.Equals(value, "none", StringComparison.OrdinalIgnoreCase) && Math.Abs(CurrentEdit.FilterIntensity - 100.0) > 1e-3)
+            {
+                CurrentEdit.FilterIntensity = 100.0;
+                OnPropertyChanged(nameof(EditFilterIntensity));
+            }
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsFilterActive));
+            OnEditMutated();
+        }
     }
 
+    public bool IsFilterActive => !string.Equals(EditFilterId, "none", StringComparison.OrdinalIgnoreCase);
+
     // === 证件照背景 ===
-    public double EditWhiteWallCleanup { get => CurrentEdit?.WhiteWallCleanup ?? 0; set { if (CurrentEdit != null) { CurrentEdit.WhiteWallCleanup = value; OnEditMutated(); } } }
-    public bool EditAiBackgroundReplace { get => CurrentEdit?.EnableAiBackgroundReplace ?? false; set { if (CurrentEdit != null) { CurrentEdit.EnableAiBackgroundReplace = value; OnEditMutated(); } } }
-    public string EditReplacementBgHex { get => CurrentEdit?.ReplacementBackgroundHex ?? "#FFFFFF"; set { if (CurrentEdit != null) { CurrentEdit.ReplacementBackgroundHex = value; OnEditMutated(); } } }
-    public bool EditUseGradientBg { get => CurrentEdit?.UseGradientBackground ?? false; set { if (CurrentEdit != null) { CurrentEdit.UseGradientBackground = value; OnEditMutated(); } } }
-    public string EditReplacementBgSecondaryHex { get => CurrentEdit?.ReplacementBackgroundSecondaryHex ?? "#93C5FD"; set { if (CurrentEdit != null) { CurrentEdit.ReplacementBackgroundSecondaryHex = value; OnEditMutated(); } } }
-    public double EditMattingFeather { get => CurrentEdit?.MattingFeather ?? 0.5; set { if (CurrentEdit != null) { CurrentEdit.MattingFeather = value; OnEditMutated(); } } }
-    public double EditSpillSuppression { get => CurrentEdit?.SpillSuppression ?? 60.0; set { if (CurrentEdit != null) { CurrentEdit.SpillSuppression = value; OnEditMutated(); } } }
-    public double EditMattingEdgeShift { get => CurrentEdit?.MattingEdgeShift ?? 0.0; set { if (CurrentEdit != null) { CurrentEdit.MattingEdgeShift = value; OnEditMutated(); } } }
+    public double EditWhiteWallCleanup { get => CurrentEdit?.WhiteWallCleanup ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.WhiteWallCleanup - value) > 1e-9) { CurrentEdit.WhiteWallCleanup = value; OnEditMutated(); } } }
+    public bool EditAiBackgroundReplace
+    {
+        get => CurrentEdit?.EnableAiBackgroundReplace ?? false;
+        set
+        {
+            if (CurrentEdit == null || CurrentEdit.EnableAiBackgroundReplace == value) return;
+            if (_pendingUndoSnapshot == null) PushUndoSnapshot();
+            CurrentEdit.EnableAiBackgroundReplace = value;
+            OnPropertyChanged();
+            OnEditMutated();
+        }
+    }
+    public string EditReplacementBgHex { get => CurrentEdit?.ReplacementBackgroundHex ?? "#FFFFFF"; set { if (CurrentEdit != null && !string.Equals(CurrentEdit.ReplacementBackgroundHex, value, StringComparison.Ordinal)) { if (_pendingUndoSnapshot == null) PushUndoSnapshot(); CurrentEdit.ReplacementBackgroundHex = value; OnPropertyChanged(); OnEditMutated(); } } }
+    public bool EditUseGradientBg
+    {
+        get => CurrentEdit?.UseGradientBackground ?? false;
+        set
+        {
+            if (CurrentEdit == null || CurrentEdit.UseGradientBackground == value) return;
+            if (_pendingUndoSnapshot == null) PushUndoSnapshot();
+            CurrentEdit.UseGradientBackground = value;
+            OnPropertyChanged();
+            OnEditMutated();
+        }
+    }
+    public string EditReplacementBgSecondaryHex { get => CurrentEdit?.ReplacementBackgroundSecondaryHex ?? "#93C5FD"; set { if (CurrentEdit != null && !string.Equals(CurrentEdit.ReplacementBackgroundSecondaryHex, value, StringComparison.Ordinal)) { if (_pendingUndoSnapshot == null) PushUndoSnapshot(); CurrentEdit.ReplacementBackgroundSecondaryHex = value; OnPropertyChanged(); OnEditMutated(); } } }
+    public double EditMattingFeather { get => CurrentEdit?.MattingFeather ?? 0.5; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.MattingFeather - value) > 1e-9) { CurrentEdit.MattingFeather = value; OnEditMutated(); } } }
+    public double EditSpillSuppression { get => CurrentEdit?.SpillSuppression ?? 60.0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.SpillSuppression - value) > 1e-9) { CurrentEdit.SpillSuppression = value; OnEditMutated(); } } }
+    public double EditMattingEdgeShift { get => CurrentEdit?.MattingEdgeShift ?? 0.0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.MattingEdgeShift - value) > 1e-9) { CurrentEdit.MattingEdgeShift = value; OnEditMutated(); } } }
 
     // === 一键影棚自动优化 ===
     public IReadOnlyDictionary<StudioEnhanceMode, string> StudioEnhanceModeOptions { get; } = new Dictionary<StudioEnhanceMode, string>
@@ -143,7 +181,7 @@ public partial class MainViewModel
         get => CurrentEdit?.StudioEnhanceStrength ?? 70.0;
         set
         {
-            if (CurrentEdit != null)
+            if (CurrentEdit != null && CurrentEdit.StudioEnhanceStrength != value)
             {
                 CurrentEdit.StudioEnhanceStrength = value;
                 OnEditMutated();
@@ -212,9 +250,9 @@ public partial class MainViewModel
                 _ = TryAutoAlignSuitInBackgroundAsync();
         }
     }
-    public double EditSuitScale { get => CurrentEdit?.SuitScale ?? 1.0; set { if (CurrentEdit != null) { CurrentEdit.SuitScale = value; OnEditMutated(); } } }
-    public double EditSuitNeckYRatio { get => CurrentEdit?.SuitNeckYRatio ?? 0.60; set { if (CurrentEdit != null) { CurrentEdit.SuitNeckYRatio = value; OnEditMutated(); } } }
-    public double EditSuitCenterXRatio { get => CurrentEdit?.SuitCenterXRatio ?? 0.50; set { if (CurrentEdit != null) { CurrentEdit.SuitCenterXRatio = value; OnEditMutated(); } } }
+    public double EditSuitScale { get => CurrentEdit?.SuitScale ?? 1.0; set { if (CurrentEdit != null && CurrentEdit.SuitScale != value) { CurrentEdit.SuitScale = value; OnEditMutated(); } } }
+    public double EditSuitNeckYRatio { get => CurrentEdit?.SuitNeckYRatio ?? 0.60; set { if (CurrentEdit != null && CurrentEdit.SuitNeckYRatio != value) { CurrentEdit.SuitNeckYRatio = value; OnEditMutated(); } } }
+    public double EditSuitCenterXRatio { get => CurrentEdit?.SuitCenterXRatio ?? 0.50; set { if (CurrentEdit != null && CurrentEdit.SuitCenterXRatio != value) { CurrentEdit.SuitCenterXRatio = value; OnEditMutated(); } } }
     [RelayCommand]
     private void OpenSuitsDirectory()
     {
@@ -233,18 +271,18 @@ public partial class MainViewModel
     }
 
     // === 构图与裁剪 ===
-    public double EditRotationDegrees { get => CurrentEdit?.RotationDegrees ?? 0; set { if (CurrentEdit != null) { CurrentEdit.RotationDegrees = value; OnEditMutated(); } } }
-    public double EditZoom { get => CurrentEdit?.Zoom ?? 1.0; set { if (CurrentEdit != null) { CurrentEdit.Zoom = value; OnEditMutated(); } } }
-    public double EditPanX { get => CurrentEdit?.PanX ?? 0; set { if (CurrentEdit != null) { CurrentEdit.PanX = value; OnEditMutated(); } } }
-    public double EditPanY { get => CurrentEdit?.PanY ?? 0; set { if (CurrentEdit != null) { CurrentEdit.PanY = value; OnEditMutated(); } } }
-    public bool EditFlipHorizontal { get => CurrentEdit?.FlipHorizontal ?? false; set { if (CurrentEdit != null) { CurrentEdit.FlipHorizontal = value; OnEditMutated(); } } }
-    public bool EditFlipVertical { get => CurrentEdit?.FlipVertical ?? false; set { if (CurrentEdit != null) { CurrentEdit.FlipVertical = value; OnEditMutated(); } } }
-    private LayoutSlot? SelectedFitOverrideSlot => SelectedSlot is { FitModeOverride: not null } slot &&
+    public double EditRotationDegrees { get => CurrentEdit?.RotationDegrees ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.RotationDegrees - value) > 1e-9) { CurrentEdit.RotationDegrees = value; OnEditMutated(); } } }
+    public double EditZoom { get => CurrentEdit?.Zoom ?? 1.0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.Zoom - value) > 1e-9) { CurrentEdit.Zoom = value; OnEditMutated(); } } }
+    public double EditPanX { get => CurrentEdit?.PanX ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.PanX - value) > 1e-9) { CurrentEdit.PanX = value; OnEditMutated(); } } }
+    public double EditPanY { get => CurrentEdit?.PanY ?? 0; set { if (CurrentEdit != null && Math.Abs(CurrentEdit.PanY - value) > 1e-9) { CurrentEdit.PanY = value; OnEditMutated(); } } }
+    public bool EditFlipHorizontal { get => CurrentEdit?.FlipHorizontal ?? false; set { if (CurrentEdit != null && CurrentEdit.FlipHorizontal != value) { if (_pendingUndoSnapshot == null) PushUndoSnapshot(); CurrentEdit.FlipHorizontal = value; OnPropertyChanged(); OnEditMutated(); } } }
+    public bool EditFlipVertical { get => CurrentEdit?.FlipVertical ?? false; set { if (CurrentEdit != null && CurrentEdit.FlipVertical != value) { if (_pendingUndoSnapshot == null) PushUndoSnapshot(); CurrentEdit.FlipVertical = value; OnPropertyChanged(); OnEditMutated(); } } }
+    private LayoutSlot? SelectedFitOverrideSlot => SelectedSlot is { EffectiveFitMode: not null } slot &&
         slot.PhotoAssetId == SelectedAsset?.Id ? slot : null;
 
     public bool IsCoverFitMode
     {
-        get => (SelectedFitOverrideSlot?.FitModeOverride ?? CurrentEdit?.FitMode ?? FitMode.Cover) == FitMode.Cover;
+        get => (SelectedFitOverrideSlot?.EffectiveFitMode ?? CurrentEdit?.FitMode ?? FitMode.Cover) == FitMode.Cover;
         set
         {
             if (CurrentEdit is not { } edit || IsCoverFitMode == value) return;
@@ -264,10 +302,97 @@ public partial class MainViewModel
 
     public void OnEditMutated()
     {
+        MarkContinuousEditMutated();
+        SyncSelectedPresetToCurrentEdit();
+        NotifyEditIndicatorPropertiesChanged();
         OnPropertyChanged(nameof(AutoFrameActionText));
         UpdateEstimatedHeadSize();
         UpdateActiveTargetContext();
         ScheduleRender(preserveContext: true);
+    }
+
+    private static bool IsCurveChannelModified(List<CurvePoint>? pts) =>
+        pts != null && !(pts.Count == 2 &&
+            Math.Abs(pts[0].X) < 1e-4 && Math.Abs(pts[0].Y) < 1e-4 &&
+            Math.Abs(pts[1].X - 1.0) < 1e-4 && Math.Abs(pts[1].Y - 1.0) < 1e-4);
+
+    public bool HasMasterCurveEdit => IsCurveChannelModified(CurrentEdit?.ToneCurves.Master);
+    public bool HasRedCurveEdit => IsCurveChannelModified(CurrentEdit?.ToneCurves.Red);
+    public bool HasGreenCurveEdit => IsCurveChannelModified(CurrentEdit?.ToneCurves.Green);
+    public bool HasBlueCurveEdit => IsCurveChannelModified(CurrentEdit?.ToneCurves.Blue);
+
+    public bool HasHslRedEdit => CurrentEdit is { } e && !e.Hsl.Red.IsZero;
+    public bool HasHslOrangeEdit => CurrentEdit is { } e && !e.Hsl.Orange.IsZero;
+    public bool HasHslYellowEdit => CurrentEdit is { } e && !e.Hsl.Yellow.IsZero;
+    public bool HasHslGreenEdit => CurrentEdit is { } e && !e.Hsl.Green.IsZero;
+    public bool HasHslCyanEdit => CurrentEdit is { } e && !e.Hsl.Cyan.IsZero;
+    public bool HasHslBlueEdit => CurrentEdit is { } e && !e.Hsl.Blue.IsZero;
+    public bool HasHslPurpleEdit => CurrentEdit is { } e && !e.Hsl.Purple.IsZero;
+    public bool HasHslMagentaEdit => CurrentEdit is { } e && !e.Hsl.Magenta.IsZero;
+
+    public bool HasLightingGroupEdits => CurrentEdit is { } e && (
+        Math.Abs(e.Exposure) > 1e-3 || Math.Abs(e.Brightness) > 1e-3 || Math.Abs(e.Contrast) > 1e-3 ||
+        Math.Abs(e.Highlights) > 1e-3 || Math.Abs(e.Shadows) > 1e-3 || Math.Abs(e.Whites) > 1e-3 ||
+        Math.Abs(e.Blacks) > 1e-3 || Math.Abs(e.Gamma - 1.0) > 1e-3);
+
+    public bool HasColorFilterGroupEdits => CurrentEdit is { } e && (
+        Math.Abs(e.Temperature) > 1e-3 || Math.Abs(e.Tint) > 1e-3 ||
+        Math.Abs(e.Vibrance) > 1e-3 || Math.Abs(e.Saturation) > 1e-3 ||
+        IsFilterActive);
+
+    public bool HasLightColorEdits => HasLightingGroupEdits || HasColorFilterGroupEdits;
+
+    public bool HasCurvesLevelsEdits => CurrentEdit is { } e && (
+        !e.ToneCurves.IsIdentity ||
+        e.InputBlack > 0.5 || e.InputWhite < 254.5 ||
+        e.OutputBlack > 0.5 || e.OutputWhite < 254.5);
+
+    public bool HasHslEdits => CurrentEdit is { } e && !e.Hsl.IsZero;
+
+    public bool HasCurveHslEdits => HasCurvesLevelsEdits || HasHslEdits;
+
+    public bool HasCropGeometryEdits => CurrentEdit is { } e && (
+        Math.Abs(e.RotationDegrees) > 1e-2 || e.QuarterTurns != 0 ||
+        e.FlipHorizontal || e.FlipVertical ||
+        Math.Abs(e.Zoom - 1.0) > 1e-3 || Math.Abs(e.PanX) > 1e-3 || Math.Abs(e.PanY) > 1e-3);
+
+    public bool HasDetailBgEdits => CurrentEdit is { } e && (
+        Math.Abs(e.Clarity) > 1e-3 || e.Sharpening > 0.5 || e.SkinSoftening > 0.5 ||
+        e.WhiteWallCleanup > 0.5 || e.EnableAiBackgroundReplace || e.UseGradientBackground ||
+        Math.Abs(e.MattingEdgeShift) > 1e-2 ||
+        e.EnableStudioPortraitEnhance || e.StudioEnhanceMode != StudioEnhanceMode.Studio ||
+        Math.Abs(e.StudioEnhanceStrength - 70.0) > 0.5);
+
+    public bool HasCropPortraitEdits => HasCropGeometryEdits || HasDetailBgEdits ||
+        (CurrentEdit is { FormalSuit: not FormalSuitStyle.None });
+
+    public bool HasAnyColorEdits => HasLightColorEdits || HasCurveHslEdits || HasDetailBgEdits ||
+        (CurrentEdit is { FormalSuit: not FormalSuitStyle.None });
+
+    private void NotifyEditIndicatorPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(HasLightingGroupEdits));
+        OnPropertyChanged(nameof(HasColorFilterGroupEdits));
+        OnPropertyChanged(nameof(HasLightColorEdits));
+        OnPropertyChanged(nameof(HasCurvesLevelsEdits));
+        OnPropertyChanged(nameof(HasHslEdits));
+        OnPropertyChanged(nameof(HasCurveHslEdits));
+        OnPropertyChanged(nameof(HasCropGeometryEdits));
+        OnPropertyChanged(nameof(HasDetailBgEdits));
+        OnPropertyChanged(nameof(HasCropPortraitEdits));
+        OnPropertyChanged(nameof(HasAnyColorEdits));
+        OnPropertyChanged(nameof(HasMasterCurveEdit));
+        OnPropertyChanged(nameof(HasRedCurveEdit));
+        OnPropertyChanged(nameof(HasGreenCurveEdit));
+        OnPropertyChanged(nameof(HasBlueCurveEdit));
+        OnPropertyChanged(nameof(HasHslRedEdit));
+        OnPropertyChanged(nameof(HasHslOrangeEdit));
+        OnPropertyChanged(nameof(HasHslYellowEdit));
+        OnPropertyChanged(nameof(HasHslGreenEdit));
+        OnPropertyChanged(nameof(HasHslCyanEdit));
+        OnPropertyChanged(nameof(HasHslBlueEdit));
+        OnPropertyChanged(nameof(HasHslPurpleEdit));
+        OnPropertyChanged(nameof(HasHslMagentaEdit));
     }
 
     public void NotifyAllEditPropertiesChanged()
@@ -296,6 +421,7 @@ public partial class MainViewModel
         OnPropertyChanged(nameof(EditSharpening));
         OnPropertyChanged(nameof(EditSkinSoftening));
         OnPropertyChanged(nameof(EditFilterId));
+        OnPropertyChanged(nameof(IsFilterActive));
         OnPropertyChanged(nameof(EditFilterIntensity));
         OnPropertyChanged(nameof(EditWhiteWallCleanup));
         OnPropertyChanged(nameof(EditAiBackgroundReplace));
@@ -321,6 +447,9 @@ public partial class MainViewModel
         OnPropertyChanged(nameof(EditSuitScale));
         OnPropertyChanged(nameof(EditSuitNeckYRatio));
         OnPropertyChanged(nameof(EditSuitCenterXRatio));
+        SyncSelectedPresetToCurrentEdit();
+        NotifyEditIndicatorPropertiesChanged();
+        OnPropertyChanged(nameof(ShowCustomPresetPlaceholder));
         UpdateEstimatedHeadSize();
     }
 
@@ -341,10 +470,23 @@ public partial class MainViewModel
 
     private bool _suppressPresetApply;
     public bool IsCustomPresetSelected => SelectedPreset is { IsBuiltIn: false };
+    public bool ShowCustomPresetPlaceholder => HasSelectedAsset && SelectedPreset == null;
+
+    private void SyncSelectedPresetToCurrentEdit()
+    {
+        var edit = CurrentEdit;
+        if (SelectedPreset is { } selected && Presets.Contains(selected) && selected.Parameters.ColorEquals(edit)) return;
+        ColorPresetItem? matched = edit != null ? Presets.FirstOrDefault(p => p.Parameters.ColorEquals(edit)) : null;
+        if (ReferenceEquals(SelectedPreset, matched)) return;
+        _suppressPresetApply = true;
+        try { SelectedPreset = matched; }
+        finally { _suppressPresetApply = false; }
+    }
 
     partial void OnSelectedPresetChanged(ColorPresetItem? value)
     {
         OnPropertyChanged(nameof(IsCustomPresetSelected));
+        OnPropertyChanged(nameof(ShowCustomPresetPlaceholder));
         if (_suppressPresetApply || value == null || CurrentEdit == null) return;
         PushUndoSnapshot();
         SelectedAsset!.Asset.EditState = value.Parameters.CloneColorOnlyInto(CurrentEdit);
@@ -424,7 +566,7 @@ public partial class MainViewModel
     [RelayCommand]
     private void ResetCropGeometry()
     {
-        if (CurrentEdit == null) return;
+        if (CurrentEdit == null || !HasCropGeometryEdits) return;
         PushUndoSnapshot();
         CurrentEdit.RotationDegrees = 0;
         CurrentEdit.QuarterTurns = 0;
@@ -435,12 +577,13 @@ public partial class MainViewModel
         CurrentEdit.PanY = 0;
         OnEditMutated();
         NotifyAllEditPropertiesChanged();
+        ShowToast("已重置裁剪与旋转");
     }
 
     [RelayCommand]
     private void ResetColorAdjustments()
     {
-        if (CurrentEdit == null) return;
+        if (CurrentEdit == null || !HasAnyColorEdits) return;
         PushUndoSnapshot();
         CurrentEdit.ResetColor();
         OnEditMutated();
@@ -451,7 +594,7 @@ public partial class MainViewModel
     [RelayCommand]
     private void ResetLightingGroup()
     {
-        if (CurrentEdit == null) return;
+        if (CurrentEdit == null || !HasLightingGroupEdits) return;
         PushUndoSnapshot();
         CurrentEdit.Exposure = 0;
         CurrentEdit.Brightness = 0;
@@ -469,7 +612,7 @@ public partial class MainViewModel
     [RelayCommand]
     private void ResetWhiteBalanceGroup()
     {
-        if (CurrentEdit == null) return;
+        if (CurrentEdit == null || !HasColorFilterGroupEdits) return;
         PushUndoSnapshot();
         CurrentEdit.Temperature = 0;
         CurrentEdit.Tint = 0;
@@ -485,7 +628,7 @@ public partial class MainViewModel
     [RelayCommand]
     private void ResetCurvesAndLevels()
     {
-        if (CurrentEdit == null) return;
+        if (CurrentEdit == null || !HasCurvesLevelsEdits) return;
         PushUndoSnapshot();
         CurrentEdit.ToneCurves = new ToneCurveData();
         CurrentEdit.InputBlack = 0;
@@ -500,7 +643,7 @@ public partial class MainViewModel
     [RelayCommand]
     private void ResetHslGroup()
     {
-        if (CurrentEdit == null) return;
+        if (CurrentEdit == null || !HasHslEdits) return;
         PushUndoSnapshot();
         CurrentEdit.Hsl = new HslAdjustmentSet();
         OnEditMutated();
@@ -511,13 +654,14 @@ public partial class MainViewModel
     [RelayCommand]
     private void ResetDetailAndBgGroup()
     {
-        if (CurrentEdit == null) return;
+        if (CurrentEdit == null || !HasDetailBgEdits) return;
         PushUndoSnapshot();
         CurrentEdit.Clarity = 0;
         CurrentEdit.Sharpening = 0;
         CurrentEdit.SkinSoftening = 0;
         CurrentEdit.WhiteWallCleanup = 0;
         CurrentEdit.EnableAiBackgroundReplace = false;
+        CurrentEdit.UseGradientBackground = false;
         CurrentEdit.MattingEdgeShift = 0.0;
         CurrentEdit.EnableStudioPortraitEnhance = false;
         CurrentEdit.StudioEnhanceMode = StudioEnhanceMode.Studio;
@@ -575,6 +719,7 @@ public partial class MainViewModel
         }
 
         NotifyAllEditPropertiesChanged();
+        PagePreviewsInvalidated?.Invoke();
         ScheduleRender();
         ShowToast($"已对 {targets.Length} 张已排版证件照应用影棚优化");
     }
@@ -614,8 +759,26 @@ public partial class MainViewModel
             InvalidateAssetPreviewCache(vm.Id);
         }
         NotifyAllEditPropertiesChanged();
+        PagePreviewsInvalidated?.Invoke();
         ScheduleRender();
         ShowToast($"已将调色批量应用到全部 {Assets.Count} 张照片");
+    }
+
+    public void PasteColorToAssets(IReadOnlyList<AssetItemViewModel> targets)
+    {
+        if (_copiedColorEdit == null || targets.Count == 0) return;
+        PushUndoSnapshot();
+        foreach (var vm in targets)
+        {
+            vm.Asset.EditState = _copiedColorEdit.CloneColorOnlyInto(vm.Asset.EditState, includePortraitEffects: false);
+            InvalidateAssetPreviewCache(vm.Id);
+        }
+        NotifyAllEditPropertiesChanged();
+        PagePreviewsInvalidated?.Invoke();
+        ScheduleRender();
+        ShowToast(targets.Count == 1
+            ? "已粘贴调色参数到所选照片"
+            : $"已将调色批量应用到所选 {targets.Count} 张照片，可撤销");
     }
 
     [RelayCommand]
@@ -676,6 +839,7 @@ public partial class MainViewModel
     [RelayCommand]
     private void SetViewMode(CanvasViewMode mode)
     {
+        if (mode != CanvasViewMode.SheetOverview && !HasSelectedAsset) return;
         ViewMode = mode;
         IsTwoPointStraightenActive = false;
         UpdateToolBanner();
@@ -986,7 +1150,7 @@ public partial class MainViewModel
             var idSpec = !string.IsNullOrEmpty(effectiveSlot.IdPhotoSpecId)
                 ? IdPhotoSpec.BuiltInSpecs.FirstOrDefault(s => s.Id == effectiveSlot.IdPhotoSpecId)
                 : (ActiveScenario == LayoutScenario.IdPhoto ? SelectedIdSpec : null);
-            return (tw, th, bleed, idSpec, effectiveSlot.FitModeOverride, effectiveSlot.SlotZoom, effectiveSlot.SlotPanX, effectiveSlot.SlotPanY);
+            return (tw, th, bleed, idSpec, effectiveSlot.EffectiveFitMode, effectiveSlot.SlotZoom, effectiveSlot.SlotPanX, effectiveSlot.SlotPanY);
         }
 
         if (ActiveScenario == LayoutScenario.IdPhoto)
@@ -1203,10 +1367,14 @@ public partial class MainViewModel
         var sheetSnapshot = ActiveSheet?.Clone();
         if (sheetSnapshot == null) return;
         _hqSettleCts?.Cancel();
-        _renderCts?.Cancel();
-        _renderCts?.Dispose();
         var cts = new CancellationTokenSource();
-        _renderCts = cts;
+        var renderToken = cts.Token;
+        var prevCts = Interlocked.Exchange(ref _renderCts, cts);
+        if (prevCts != null)
+        {
+            try { prevCts.Cancel(); } catch (ObjectDisposedException) { }
+            prevCts.Dispose();
+        }
         int previewTargetLongEdgePx = Volatile.Read(ref _previewTargetLongEdgePx);
         int effectiveTargetLongEdgePx = isInteractiveDrag ? Math.Min(previewTargetLongEdgePx, 960) : previewTargetLongEdgePx;
 
@@ -1241,7 +1409,12 @@ public partial class MainViewModel
         var showGuide = ShowIdGuidelines;
         var showFaceOverlay = ShowFaceLandmarksOverlay;
         var showClip = ShowClippingOverlay;
-        var safeMargin = CurrentCalibration.SafeMarginMm;
+        var calibration = CurrentCalibration;
+        var safeMargin = !calibration.DefaultBorderless &&
+            string.Equals(calibration.PrinterName, SelectedPrinterName, StringComparison.OrdinalIgnoreCase) &&
+            PrinterChoices.Any(printer => !printer.IsVirtual && printer.Name == SelectedPrinterName)
+            ? calibration.SafeMarginMm
+            : 0.0;
         (double trimW, double trimH, double bleed, IdPhotoSpec? targetIdSpec, FitMode? fitOverride, double slotZoom, double slotPanX, double slotPanY) targetGeom =
             selectedAssetSnap != null
                 ? ResolveTargetSlotGeometry(selectedSlotSnap, selectedAssetSnap.Id)
@@ -1250,7 +1423,6 @@ public partial class MainViewModel
         string? softProofKey = softProofBytes != null ? SelectedIccPath : null;
         var softProofOpts = CurrentSoftProofOptions();
 
-        var renderToken = cts.Token;
         _ = Task.Run(async () =>
         {
             bool acquiredGate = false;
@@ -1522,7 +1694,7 @@ public partial class MainViewModel
     {
         double targetW = slot?.WidthMm ?? 100;
         double targetH = slot?.HeightMm ?? 140;
-        if (slot != null && Math.Abs(Math.Abs(slot.SlotRotationDegrees) - 90.0) < 1.0)
+        if (slot is { IsQuarterTurnRotated: true })
             (targetW, targetH) = (targetH, targetW);
         if (slot?.PolaroidStyle != null)
         {
@@ -1560,7 +1732,7 @@ public partial class MainViewModel
                     HeightMm = targetH,
                     PhotoAssetId = asset.Id,
                     IdPhotoSpecId = slot?.IdPhotoSpecId,
-                    FitModeOverride = slot?.FitModeOverride,
+                    FitModeOverride = slot?.EffectiveFitMode,
                     SlotZoom = slot?.SlotZoom ?? 1.0,
                     SlotPanX = slot?.SlotPanX ?? 0,
                     SlotPanY = slot?.SlotPanY ?? 0,
@@ -1811,7 +1983,7 @@ public partial class MainViewModel
             double hMm = slot.HeightMm + slot.BleedMm * 2.0;
             if (slot.PolaroidStyle != null)
             {
-                bool rotated = Math.Abs(Math.Abs(slot.SlotRotationDegrees) - 90.0) < 1.0;
+                bool rotated = slot.IsQuarterTurnRotated;
                 wMm = Math.Max(10, slot.WidthMm - (rotated
                     ? slot.PolaroidStyle.MarginTopMm + slot.PolaroidStyle.MarginBottomMm
                     : slot.PolaroidStyle.MarginLeftMm + slot.PolaroidStyle.MarginRightMm));

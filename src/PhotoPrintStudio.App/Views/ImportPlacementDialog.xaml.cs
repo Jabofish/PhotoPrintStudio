@@ -10,11 +10,13 @@ public partial class ImportPlacementDialog : Window
 {
     private readonly int _count;
     private readonly int _capacity;
+    private readonly int _emptyCount;
     private readonly bool _replaceBlankPage;
     private readonly bool _arrangingSelection;
     private readonly bool _orientSinglePhotoPages;
 
-    private ImportPlacement Placement => RepeatChoice.IsChecked == true ? ImportPlacement.OnePhotoPerPage
+    private ImportPlacement Placement => FillEmptyChoice.IsChecked == true ? ImportPlacement.FillEmptySlots
+        : RepeatChoice.IsChecked == true ? ImportPlacement.OnePhotoPerPage
         : SmartChoice.IsChecked == true ? ImportPlacement.SmartPaginate
         : PaginateChoice.IsChecked == true ? ImportPlacement.Paginate
         : ImportPlacement.PoolOnly;
@@ -28,33 +30,47 @@ public partial class ImportPlacementDialog : Window
     {
         _count = count;
         _arrangingSelection = arrangingSelection;
-        _orientSinglePhotoPages = !arrangingSelection && vm.ActiveSheet?.Scenario == LayoutScenario.SinglePhoto;
+        _orientSinglePhotoPages = vm.ActiveSheet is { Scenario: LayoutScenario.SinglePhoto, IsCustomFreeform: false, Slots.Count: 1 };
         _capacity = vm.ActiveSheet?.Slots.Count ?? 0;
-        _replaceBlankPage = vm.Sheets.Count == 1 && vm.ActiveSheet?.Slots.All(s => string.IsNullOrEmpty(s.PhotoAssetId)) == true;
+        _emptyCount = vm.ActiveSheet?.Slots.Count(s => string.IsNullOrEmpty(s.PhotoAssetId)) ?? 0;
+        _replaceBlankPage = vm.Sheets.Count == 1 && _capacity > 0 && _emptyCount == _capacity;
         InitializeComponent();
         SourceInitialized += (_, _) => ThemeManager.ApplyWindowTitleBarTheme(this, vm.IsDarkTheme);
         string template = vm.SelectedTemplate?.Name ?? "当前版式";
         SummaryText.Text = $"{(arrangingSelection ? "已选择" : "已读取")} {count} 张照片\n{template}，每页 {_capacity} 格";
-        if (arrangingSelection)
-        {
-            Title = "所选照片排版";
-            PaginateChoice.Visibility = SmartChoice.Visibility = RepeatChoice.Visibility = PoolChoice.Visibility = Visibility.Collapsed;
-            PaginateChoice.IsChecked = true;
-            return;
-        }
-        PaginateChoice.Content = "自动分页";
+
+        bool hasPartialEmpty = _emptyCount > 0 && _emptyCount < _capacity;
+        FillEmptyChoice.Visibility = hasPartialEmpty ? Visibility.Visible : Visibility.Collapsed;
+        FillEmptyChoice.Content = $"填入本页空位（剩余 {_emptyCount} 格）";
+
+        PaginateChoice.Content = arrangingSelection ? "按当前版式自动分页" : "自动分页";
         PaginateChoice.IsEnabled = _capacity > 0;
+        SmartChoice.Content = arrangingSelection ? "智能构图并分页" : "智能导入";
         SmartChoice.Visibility = _capacity > 0 && vm.ActiveSheet?.Scenario != LayoutScenario.IdPhoto
             ? Visibility.Visible : Visibility.Collapsed;
         RepeatChoice.Content = "每张单独一页";
         RepeatChoice.Visibility = vm.ActiveSheet?.Scenario == LayoutScenario.IdPhoto && _capacity > 1
             ? Visibility.Visible : Visibility.Collapsed;
+
+        if (arrangingSelection)
+        {
+            Title = "所选照片排版";
+            PoolChoice.Visibility = Visibility.Collapsed;
+        }
+
         if (count == 1 && _replaceBlankPage && RepeatChoice.Visibility == Visibility.Visible)
             RepeatChoice.IsChecked = true;
         else if (PaginateChoice.IsEnabled)
             PaginateChoice.IsChecked = true;
-        else
+        else if (!arrangingSelection)
             PoolChoice.IsChecked = true;
+        else
+        {
+            PlacementOptions.Visibility = Visibility.Collapsed;
+            AutoRotateChoice.Visibility = Visibility.Collapsed;
+            ResultText.Text = "当前版式放不下照片，请先调整纸张、边距或版式。";
+            ConfirmButton.IsEnabled = false;
+        }
     }
 
     private void Choice_Checked(object sender, RoutedEventArgs e)
@@ -65,12 +81,35 @@ public partial class ImportPlacementDialog : Window
         AutoRotateChoice.Visibility = placement == ImportPlacement.SmartPaginate ? Visibility.Visible : Visibility.Collapsed;
         bool showOrder = placement switch
         {
+            ImportPlacement.FillEmptySlots => _count > 1 && _emptyCount > 1,
             ImportPlacement.Paginate or ImportPlacement.SmartPaginate => _count > 1 && _capacity > 1,
             _ => false
         };
         OrderOptions.Visibility = showOrder ? Visibility.Visible : Visibility.Collapsed;
         Grid.SetColumn(FitOptions, showOrder ? 2 : 0);
-        if (placement is ImportPlacement.Paginate or ImportPlacement.OnePhotoPerPage or ImportPlacement.SmartPaginate)
+        if (placement == ImportPlacement.FillEmptySlots)
+        {
+            int placed = Math.Min(_count, _emptyCount);
+            int remaining = _count - placed;
+            ResultText.Text = remaining > 0
+                ? $"先填满当前页剩余的 {placed} 个空位，其余 {remaining} 张留在素材池。"
+                : $"将 {placed} 张照片填入当前页空位，已有格位保持不变。";
+            if (showOrder)
+                ResultText.Text += Arrangement.Order switch
+                {
+                    SlotFillOrder.RowFirst => "从左到右逐行铺放。",
+                    SlotFillOrder.ColumnFirst => "从上到下逐列铺放。",
+                    _ => ""
+                };
+            ResultText.Text += Arrangement.Fit switch
+            {
+                FitMode.Cover => "必要时裁掉照片边缘来填满格位。",
+                FitMode.Contain => "按原比例放入格位，允许留白。",
+                _ => ""
+            };
+            ConfirmButton.Content = _arrangingSelection ? $"填入 {placed} 格" : $"导入并填入 {placed} 格";
+        }
+        else if (placement is ImportPlacement.Paginate or ImportPlacement.OnePhotoPerPage or ImportPlacement.SmartPaginate)
         {
             int pages = placement == ImportPlacement.OnePhotoPerPage ? _count : (int)Math.Ceiling(_count / (double)_capacity);
             ResultText.Text = _replaceBlankPage ? $"使用当前空白页，共排 {pages} 页。"

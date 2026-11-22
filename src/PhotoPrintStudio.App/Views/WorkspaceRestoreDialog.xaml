@@ -3,15 +3,24 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="恢复上次工作" Width="390" SizeToContent="Height"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
+        Style="{StaticResource StudioWindow}"
         Background="{DynamicResource BrushBgPanel}" PreviewKeyDown="Window_PreviewKeyDown">
-    <StackPanel Margin="20">
-        <TextBlock x:Name="WorkspaceSummary" FontSize="14" TextWrapping="Wrap" />
-        <TextBlock Text="重新开始会清除上次的暂存记录。"
-                   Margin="0,8,0,18" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" />
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="重新开始" Style="{StaticResource ModernButton}" MinWidth="90"
-                    Margin="0,0,8,0" Click="StartFresh_Click" />
-            <Button Content="恢复上次工作" Style="{StaticResource PrimaryButton}" MinWidth="110" Click="Restore_Click" />
-        </StackPanel>
-    </StackPanel>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <DockPanel Grid.Row="0">
+            <StackPanel Margin="20,16,20,16">
+                <TextBlock x:Name="WorkspaceSummary" FontSize="13" TextWrapping="Wrap" />
+                <TextBlock Text="选择“重新开始”会清除上次的暂存记录。" Style="{StaticResource Caption}" Margin="0,8,0,0" />
+            </StackPanel>
+        </DockPanel>
+        <Border Grid.Row="1" Style="{StaticResource DialogFooter}">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="重新开始" Style="{StaticResource DialogButton}" Click="StartFresh_Click" />
+                <Button Content="恢复" Style="{StaticResource DialogPrimaryButton}" Click="Restore_Click" />
+            </StackPanel>
+        </Border>
+    </Grid>
 </Window>

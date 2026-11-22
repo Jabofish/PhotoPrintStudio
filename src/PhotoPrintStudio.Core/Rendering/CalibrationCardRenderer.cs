@@ -30,12 +30,10 @@ public static class CalibrationCardRenderer
 
         if (calibration != null)
         {
-            double overscan = Math.Clamp(calibration.OverscanCompensationPercent / 100.0, 0.85, 1.15);
-            float sx = (float)(calibration.ScaleXPercent / 100.0 * overscan);
-            float sy = (float)(calibration.ScaleYPercent / 100.0 * overscan);
-            canvas.Translate((float)calibration.OffsetXMm * pxPerMm, (float)calibration.OffsetYMm * pxPerMm);
+            var (sx, sy, dx, dy) = calibration.GetGeometryTransform();
+            canvas.Translate((float)dx * pxPerMm, (float)dy * pxPerMm);
             canvas.Translate(w * 0.5f, h * 0.5f);
-            canvas.Scale(sx, sy);
+            canvas.Scale((float)sx, (float)sy);
             canvas.Translate(-w * 0.5f, -h * 0.5f);
         }
 
@@ -154,14 +152,18 @@ public static class CalibrationCardRenderer
         double expectedHorizontalMm,
         double measuredHorizontalMm,
         double expectedVerticalMm,
-        double measuredVerticalMm)
+        double measuredVerticalMm,
+        PrinterCalibrationProfile? measuredWith = null)
     {
         var updated = current.Clone();
+        measuredWith ??= current;
+        double overscanRatio = Math.Clamp(measuredWith.OverscanCompensationPercent, 85.0, 115.0)
+            / Math.Clamp(current.OverscanCompensationPercent, 85.0, 115.0);
         updated.ScaleXPercent = measuredHorizontalMm > 1
-            ? Math.Round(Math.Clamp(current.ScaleXPercent * (expectedHorizontalMm / measuredHorizontalMm), 90.0, 110.0), 2)
+            ? Math.Round(Math.Clamp(measuredWith.ScaleXPercent * overscanRatio * (expectedHorizontalMm / measuredHorizontalMm), 90.0, 110.0), 2)
             : current.ScaleXPercent;
         updated.ScaleYPercent = measuredVerticalMm > 1
-            ? Math.Round(Math.Clamp(current.ScaleYPercent * (expectedVerticalMm / measuredVerticalMm), 90.0, 110.0), 2)
+            ? Math.Round(Math.Clamp(measuredWith.ScaleYPercent * overscanRatio * (expectedVerticalMm / measuredVerticalMm), 90.0, 110.0), 2)
             : current.ScaleYPercent;
         return updated;
     }

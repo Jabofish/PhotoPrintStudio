@@ -69,7 +69,21 @@ internal static class SmokeTestRunner
         int w = Math.Max(1, (int)Math.Round(root.ActualWidth));
         int h = Math.Max(1, (int)Math.Round(root.ActualHeight));
         var rtb = new RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
-        rtb.Render(root);
+        var bounds = new Rect(0, 0, w, h);
+        var screenshot = new DrawingVisual();
+        using (DrawingContext drawing = screenshot.RenderOpen())
+        {
+            drawing.DrawRectangle(window.Background, null, bounds);
+            drawing.DrawRectangle(new VisualBrush(root)
+            {
+                ViewboxUnits = BrushMappingMode.Absolute,
+                Viewbox = bounds,
+                Stretch = Stretch.None,
+                AlignmentX = AlignmentX.Left,
+                AlignmentY = AlignmentY.Top
+            }, null, bounds);
+        }
+        rtb.Render(screenshot);
 
         var enc = new PngBitmapEncoder();
         enc.Frames.Add(BitmapFrame.Create(rtb));

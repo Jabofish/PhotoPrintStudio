@@ -36,24 +36,24 @@ public partial class MainViewModel
         : "联机监视";
 
     public string HotFolderStatusSummary => IsHotFolderWatching
-        ? $"正在监视：{HotFolderWatchDirectory}（已接收 {HotFolderImportedCount} 张，点击「打印」仅输出当前页）"
+        ? $"正在监视：{HotFolderWatchDirectory}（已接收 {HotFolderImportedCount} 张）"
         : string.IsNullOrWhiteSpace(HotFolderWatchDirectory)
-            ? "尚未选择监视文件夹（启用后自动接收相机写入的新照片）"
+            ? "尚未选择监视文件夹"
             : $"已暂停监视：{HotFolderWatchDirectory}";
 
     public IReadOnlyDictionary<HotFolderPlacementStrategy, string> HotFolderPlacementOptions { get; } = new Dictionary<HotFolderPlacementStrategy, string>
     {
-        [HotFolderPlacementStrategy.ReplaceCurrentSheet] = "替换当前页成片（推荐：历史样张留存素材库，防误打）",
-        [HotFolderPlacementStrategy.PoolOnlySelectLatest] = "仅加入素材库并选中预览（绝不改动当前打印页）",
-        [HotFolderPlacementStrategy.FillEmptySlotsOnly] = "顺序填入当前页空位（满页后仅入素材库不增页）",
-        [HotFolderPlacementStrategy.AppendNewPage] = "每张自动追加新打印页（连续流水出片）"
+        [HotFolderPlacementStrategy.ReplaceCurrentSheet] = "替换当前页成片（推荐）",
+        [HotFolderPlacementStrategy.PoolOnlySelectLatest] = "仅加入素材池，不改动打印页",
+        [HotFolderPlacementStrategy.FillEmptySlotsOnly] = "填入当前页空位，满页后只入素材池",
+        [HotFolderPlacementStrategy.AppendNewPage] = "每张追加一页新打印页"
     };
 
     public IReadOnlyDictionary<HotFolderEditTemplateMode, string> HotFolderEditTemplateOptions { get; } = new Dictionary<HotFolderEditTemplateMode, string>
     {
-        [HotFolderEditTemplateMode.CloneCurrentPhotoStyle] = "复刻当前照片全部调色/换底/影棚/正装样式（推荐）",
-        [HotFolderEditTemplateMode.ApplyColorPreset] = "套用下方指定的调色预设",
-        [HotFolderEditTemplateMode.None] = "不套用调色模板（保留相机原色，可叠加下方快捷项）"
+        [HotFolderEditTemplateMode.CloneCurrentPhotoStyle] = "沿用当前照片的全部调整（推荐）",
+        [HotFolderEditTemplateMode.ApplyColorPreset] = "套用调色预设",
+        [HotFolderEditTemplateMode.None] = "不调色，保留相机原色"
     };
 
     public string HotFolderWatchDirectory
@@ -320,7 +320,7 @@ public partial class MainViewModel
         }
 
         IsHotFolderWatching = true;
-        HotFolderLastEventText = $"已开启监视：{Path.GetFileName(_hotFolderSettings.WatchDirectory)}（等待相机写入新照片…）";
+        HotFolderLastEventText = $"已开启监视：{Path.GetFileName(_hotFolderSettings.WatchDirectory)}，等待新照片…";
         ShowToast($"已开启联机文件夹监视：{Path.GetFileName(_hotFolderSettings.WatchDirectory)}");
         return true;
     }
@@ -469,7 +469,7 @@ public partial class MainViewModel
                     preparedPages = LayoutEngine.BuildPaginatedSheets(appendPrototype, [asset], orientSinglePhotoPages: true);
                     var placedSlot = preparedPages.SelectMany(page => page.Slots).First(slot => slot.PhotoAssetId == asset.Id);
                     var (w, h, bleed) = PortraitAutoFrameHelper.ResolveUprightSlotPhotoFrameMm(placedSlot);
-                    targetGeom = (w, h, bleed, null, placedSlot.FitModeOverride,
+                    targetGeom = (w, h, bleed, null, placedSlot.EffectiveFitMode,
                         placedSlot.SlotZoom, placedSlot.SlotPanX, placedSlot.SlotPanY);
                 }
 

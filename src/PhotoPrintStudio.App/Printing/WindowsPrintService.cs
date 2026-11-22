@@ -3,6 +3,8 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Drawing.Printing;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using PhotoPrintStudio.Core.Layout;
 using PhotoPrintStudio.Core.Models;
 using PhotoPrintStudio.Core.Rendering;
 using SkiaSharp;
@@ -22,12 +24,24 @@ public sealed class WindowsPrintService : IPrintService
     private const int DM_OUT_BUFFER = 0x02;
     private const int DM_IN_PROMPT = 0x04;
     private const int DM_IN_BUFFER = 0x08;
+    private const int DM_SCALE = 0x10;
+    // DEVMODEW 公共字段的字节偏移，与后面的驱动私有数据无关。
+    private const int DevModeSizeOffset = 68;
+    private const int DevModeDriverExtraOffset = 70;
+    private const int DevModeFieldsOffset = 72;
+    private const int DevModeScaleOffset = 84;
     private const uint GHND = 0x0042;
+    private const int PhysicalWidth = 110;
+    private const int PrintableWidth = 8;
+    private const int PrintableHeight = 10;
+    private const int PhysicalHeight = 111;
+    private const int PhysicalOffsetX = 112;
+    private const int PhysicalOffsetY = 113;
 
     private static readonly string[] KnownVirtualPrinterNames =
         ["Microsoft Print to PDF", "Microsoft XPS Document Writer", "OneNote", "Send to OneNote",
          "Fax", "Adobe PDF", "PDFCreator", "CutePDF Writer", "doPDF", "Foxit PDF Printer",
-         "PDF-XChange", "Bullzip PDF Printer", "PDF24"];
+         "PDF-XChange", "Bullzip PDF Printer", "PDF24", "导出为WPS PDF", "AnyDesk Printer"];
 
     internal static bool IsKnownVirtualPrinter(string printerName)
     {
@@ -263,19 +277,32 @@ public sealed class WindowsPrintService : IPrintService
         doc.PrintController = new StandardPrintController();
         doc.PrinterSettings.PrinterName = printerName;
         var savedPreferredPaper = ApplySavedDevMode(doc, printerName);
+        SetActualSizeForPrintJob(doc.PrinterSettings);
         var systemDefaultPaper = savedPreferredPaper == null ? TryGetDefaultPaperSize(doc.PrinterSettings) : null;
-        doc.PrinterSettings.Copies = Math.Max((short)1, copies);
+        doc.PrinterSettings.Copies = 1;
         doc.DocumentName = $"PhotoPrintStudio ({sheets.Count}页)";
 
-        var firstSheet = sheets[0];
-        ApplyPageSettings(
-            doc.PrinterSettings,
-            doc.DefaultPageSettings,
-            firstSheet.PaperWidthMm,
-            firstSheet.PaperHeightMm,
-            savedPreferredPaper,
-            systemDefaultPaper,
-            preferBorderless: calibration.DefaultBorderless || SheetTouchesPaperEdge(firstSheet));
+        var settingsByPaper = new Dictionary<(double Width, double Height, bool Borderless), PreparedOutput>();
+        var outputs = new PreparedOutput[sheets.Count];
+        for (int i = 0; i < sheets.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var sheet = sheets[i];
+            var key = (Width: sheet.PaperWidthMm, Height: sheet.PaperHeightMm,
+                Borderless: ShouldPreferBorderlessPaper(sheet, calibration));
+            if (!settingsByPaper.TryGetValue(key, out var settings))
+            {
+                settings = PrepareOutput(doc.PrinterSettings, key.Width, key.Height,
+                    savedPreferredPaper, systemDefaultPaper, key.Borderless, printDpi);
+                settingsByPaper.Add(key, settings);
+            }
+            RequireMeasuredBorderless(sheet, printerName, settings, calibration);
+            ValidatePrintableSlots(sheet, settings.PaperBounds, settings.PrintableBounds,
+                calibration.ForOutput(settings.CalibrationKey), duplexMirrorBackSide, printDpi);
+            outputs[i] = settings;
+        }
+        doc.PrinterSettings.Copies = Math.Max((short)1, copies);
+        doc.DefaultPageSettings = outputs[0].Settings;
 
         doc.QueryPageSettings += (_, e) =>
         {
@@ -284,18 +311,8 @@ public sealed class WindowsPrintService : IPrintService
                 e.Cancel = true;
                 return;
             }
-            if (pageIndex < sheets.Count)
-            {
-                var current = sheets[pageIndex];
-                ApplyPageSettings(
-                    doc.PrinterSettings,
-                    e.PageSettings,
-                    current.PaperWidthMm,
-                    current.PaperHeightMm,
-                    savedPreferredPaper,
-                    systemDefaultPaper,
-                    preferBorderless: calibration.DefaultBorderless || SheetTouchesPaperEdge(current));
-            }
+            if (pageIndex < outputs.Length && !ReferenceEquals(e.PageSettings, outputs[pageIndex].Settings))
+                e.PageSettings = outputs[pageIndex].Settings;
         };
 
         doc.PrintPage += (_, e) =>
@@ -320,16 +337,18 @@ public sealed class WindowsPrintService : IPrintService
                 ShowSafeMarginOverlay = false,
                 ShowBleedOverlay = false,
                 ShowIdGuidelinesOnSelected = false,
-                PrinterCalibration = calibration,
+                PrinterCalibration = calibration.ForOutput(outputs[pageIndex].CalibrationKey),
                 ApplyPrinterCalibrationTransform = true,
                 ApplyPrinterColorCompensation = true,
                 DuplexMirrorBackSide = duplexMirrorBackSide,
                 OutputSharpeningAmount = outputSharpeningAmount
             };
 
-            bool allowOverscanFill = SheetTouchesPaperEdge(sheet) && Math.Abs(calibration.OverscanCompensationPercent - 100.0) < 0.05;
             using var skBmp = SheetRenderer.RenderSheetBitmap(sheet, assetsById, CachedResolve, renderOpts);
-            DrawSkBitmapToPrinterGraphics(skBmp, sheet.PaperWidthMm, sheet.PaperHeightMm, e, allowOverscanFill);
+            var (paperBounds, printableBounds) = ReadPaperGeometry(e.Graphics, e.PageSettings, e.PageBounds);
+            VerifyPhysicalPaper(e.PageBounds, paperBounds);
+            ValidatePrintableSlots(sheet, paperBounds, printableBounds, renderOpts.PrinterCalibration, duplexMirrorBackSide, printDpi);
+            DrawBitmapWithinPaper(skBmp, sheet.PaperWidthMm, sheet.PaperHeightMm, e.Graphics, paperBounds);
 
             pageIndex++;
             e.HasMorePages = pageIndex < sheets.Count;
@@ -337,6 +356,18 @@ public sealed class WindowsPrintService : IPrintService
 
         doc.Print();
         cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    public string GetGeometryCalibrationKey(PrintSheet sheet, string printerName, PrinterCalibrationProfile calibration, int dpi)
+    {
+        using var doc = new PrintDocument();
+        doc.PrinterSettings.PrinterName = printerName;
+        var savedPaper = ApplySavedDevMode(doc, printerName);
+        SetActualSizeForPrintJob(doc.PrinterSettings);
+        doc.PrinterSettings.Copies = 1;
+        return PrepareOutput(doc.PrinterSettings, sheet.PaperWidthMm, sheet.PaperHeightMm, savedPaper,
+            savedPaper == null ? TryGetDefaultPaperSize(doc.PrinterSettings) : null,
+            ShouldPreferBorderlessPaper(sheet, calibration), dpi).CalibrationKey;
     }
 
     public void PrintCalibrationCard(
@@ -350,26 +381,58 @@ public sealed class WindowsPrintService : IPrintService
         doc.PrintController = new StandardPrintController();
         doc.PrinterSettings.PrinterName = printerName;
         var savedPreferredPaper = ApplySavedDevMode(doc, printerName);
+        SetActualSizeForPrintJob(doc.PrinterSettings);
+        doc.PrinterSettings.Copies = 1;
         var systemDefaultPaper = savedPreferredPaper == null ? TryGetDefaultPaperSize(doc.PrinterSettings) : null;
         doc.DocumentName = "PhotoPrintStudio 物理校准测试卡";
-        ApplyPageSettings(
+        var output = PrepareOutput(
             doc.PrinterSettings,
-            doc.DefaultPageSettings,
             paperWidthMm,
             paperHeightMm,
             savedPreferredPaper,
             systemDefaultPaper,
-            preferBorderless: false);
+            preferBorderless: calibration.DefaultBorderless,
+            dpi);
+        doc.DefaultPageSettings = output.Settings;
+        if (calibration.GeometryTarget is { } target && target != output.CalibrationKey)
+            throw new InvalidOperationException("纸型或驱动设置已改变，请重新打开校准向导。");
+        var cardCalibration = calibration.GeometryTarget != null ? calibration : calibration.ForOutput(output.CalibrationKey);
 
         doc.PrintPage += (_, e) =>
         {
             if (e.Graphics == null) return;
-            using var skBmp = CalibrationCardRenderer.RenderCalibrationCard(paperWidthMm, paperHeightMm, dpi, calibration);
-            DrawSkBitmapToPrinterGraphics(skBmp, paperWidthMm, paperHeightMm, e, allowBorderlessOverscanFill: false);
+            using var skBmp = CalibrationCardRenderer.RenderCalibrationCard(paperWidthMm, paperHeightMm, dpi, cardCalibration);
+            DrawSkBitmapToPrinterGraphics(skBmp, paperWidthMm, paperHeightMm, e);
             e.HasMorePages = false;
         };
 
         doc.Print();
+    }
+
+    private static void SetActualSizeForPrintJob(PrinterSettings settings)
+    {
+        IntPtr handle = settings.GetHdevmode();
+        try
+        {
+            IntPtr mode = GlobalLock(handle);
+            if (mode == IntPtr.Zero) return;
+            bool changed;
+            try { changed = SetActualSizeOnDevMode(mode); }
+            finally { GlobalUnlock(handle); }
+            if (changed) settings.SetHdevmode(handle);
+        }
+        finally { GlobalFree(handle); }
+    }
+
+    internal static bool SetActualSizeOnDevMode(IntPtr mode)
+    {
+        if (Marshal.ReadInt16(mode, DevModeSizeOffset) < DevModeScaleOffset + sizeof(short) ||
+            (Marshal.ReadInt32(mode, DevModeFieldsOffset) & DM_SCALE) == 0 ||
+            Marshal.ReadInt16(mode, DevModeScaleOffset) == 100)
+            return false;
+
+        Marshal.WriteInt16(mode, DevModeScaleOffset, 100);
+        return true;
     }
 
     private static PaperSize? TryGetDefaultPaperSize(PrinterSettings settings)
@@ -378,20 +441,29 @@ public sealed class WindowsPrintService : IPrintService
         catch { return null; }
     }
 
-    private static void ApplyPageSettings(
+    private sealed record PreparedOutput(PageSettings Settings, RectangleF PaperBounds, RectangleF PrintableBounds, string CalibrationKey);
+
+    private static void RequireMeasuredBorderless(PrintSheet sheet, string printerName, PreparedOutput output,
+        PrinterCalibrationProfile calibration)
+    {
+        if (IsKnownVirtualPrinter(printerName) ||
+            calibration.GeometryByOutput.GetValueOrDefault(output.CalibrationKey) is { HasMeasuredScale: true })
+            return;
+
+        if (IsBorderlessPaperName(output.Settings.PaperSize.PaperName) ||
+            output.PrintableBounds == output.PaperBounds)
+            throw new InvalidOperationException($"{sheet.SheetName} 的当前无边距设置还没有实测尺寸。请在打印校准中用同样的纸型、方向和驱动设置打印测试卡，输入实测长度后保存。");
+    }
+
+    private static PreparedOutput PrepareOutput(
         PrinterSettings printerSettings,
-        PageSettings pageSettings,
         double paperWidthMm,
         double paperHeightMm,
         PaperSize? savedPreferredPaper,
         PaperSize? systemDefaultPaper,
-        bool preferBorderless)
+        bool preferBorderless,
+        int dpi)
     {
-        pageSettings.Margins = new Margins(0, 0, 0, 0);
-        bool wantLandscape = paperWidthMm >= paperHeightMm;
-        if (pageSettings.Landscape != wantLandscape)
-            pageSettings.Landscape = wantLandscape;
-
         var matched = FindMatchingPaperSize(
             printerSettings,
             paperWidthMm,
@@ -399,22 +471,56 @@ public sealed class WindowsPrintService : IPrintService
             savedPreferredPaper,
             systemDefaultPaper,
             preferBorderless);
-        if (matched != null && !AreSamePaperSize(pageSettings.PaperSize, matched))
-            pageSettings.PaperSize = matched;
+        // Landscape 交换驱动纸型的宽高，有些纸型原始宽度已大于高度。
+        var pageSettings = new PageSettings(printerSettings)
+        {
+            Margins = new Margins(0, 0, 0, 0),
+            PaperSize = matched,
+            Landscape = (paperWidthMm >= paperHeightMm) != (matched.Width > matched.Height)
+        };
+        using var measurement = printerSettings.CreateMeasurementGraphics(pageSettings);
+        var (paperBounds, printableBounds) = ReadPaperGeometry(measurement, pageSettings, pageSettings.Bounds);
+        VerifyPhysicalPaper(pageSettings.Bounds, paperBounds);
+        return new(pageSettings, paperBounds, printableBounds,
+            ReadCalibrationKey(printerSettings, pageSettings, paperWidthMm, paperHeightMm, dpi, preferBorderless));
     }
 
-    internal static bool SheetTouchesPaperEdge(PrintSheet sheet)
+    private static string ReadCalibrationKey(PrinterSettings printer, PageSettings page, double width, double height, int dpi, bool preferBorderless)
     {
-        const double edgeTolMm = 0.2;
-        foreach (var slot in sheet.Slots)
+        // 包含原生驱动私有设置。驱动可在纸型名称相同的情况下启用不同的无边距扩张。
+        var handle = printer.GetHdevmode(page);
+        try
         {
-            if (slot.XMm - slot.BleedMm <= edgeTolMm ||
-                slot.YMm - slot.BleedMm <= edgeTolMm ||
-                slot.XMm + slot.WidthMm + slot.BleedMm >= sheet.PaperWidthMm - edgeTolMm ||
-                slot.YMm + slot.HeightMm + slot.BleedMm >= sheet.PaperHeightMm - edgeTolMm)
-                return true;
+            var mode = GlobalLock(handle);
+            if (mode == IntPtr.Zero)
+                throw new InvalidOperationException("无法读取打印驱动设置。");
+            try
+            {
+                int length = (ushort)Marshal.ReadInt16(mode, DevModeSizeOffset) +
+                    (ushort)Marshal.ReadInt16(mode, DevModeDriverExtraOffset);
+                if (length < DevModeFieldsOffset + sizeof(int) || (nuint)length > GlobalSize(handle))
+                    throw new InvalidOperationException("无法识别打印驱动设置。");
+                var bytes = new byte[length];
+                Marshal.Copy(mode, bytes, 0, length);
+                return FormattableString.Invariant($"v1:{width:R}x{height:R}:{dpi}:{preferBorderless}:{Convert.ToHexString(SHA256.HashData(bytes))}");
+            }
+            finally { GlobalUnlock(handle); }
         }
-        return false;
+        finally { GlobalFree(handle); }
+    }
+
+    internal static bool ShouldPreferBorderlessPaper(PrintSheet sheet, PrinterCalibrationProfile calibration)
+    {
+        if (calibration.DefaultBorderless) return true;
+        if (sheet.Scenario is not (LayoutScenario.SinglePhoto or LayoutScenario.SixInchTwoInOne))
+            return false;
+
+        const double edgeToleranceMm = 0.2;
+        return sheet.Slots.Any(slot => !string.IsNullOrEmpty(slot.PhotoAssetId) &&
+            (slot.XMm - slot.BleedMm <= edgeToleranceMm ||
+             slot.YMm - slot.BleedMm <= edgeToleranceMm ||
+             slot.XMm + slot.WidthMm + slot.BleedMm >= sheet.PaperWidthMm - edgeToleranceMm ||
+             slot.YMm + slot.HeightMm + slot.BleedMm >= sheet.PaperHeightMm - edgeToleranceMm));
     }
 
     internal static bool IsBorderlessPaperName(string? paperName)
@@ -428,17 +534,7 @@ public sealed class WindowsPrintService : IPrintService
         return false;
     }
 
-    private static bool AreSamePaperSize(PaperSize? a, PaperSize? b)
-    {
-        if (ReferenceEquals(a, b)) return true;
-        if (a == null || b == null) return false;
-        return a.RawKind == b.RawKind &&
-               a.Width == b.Width &&
-               a.Height == b.Height &&
-               string.Equals(a.PaperName, b.PaperName, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static PaperSize? FindMatchingPaperSize(
+    private static PaperSize FindMatchingPaperSize(
         PrinterSettings settings,
         double widthMm,
         double heightMm,
@@ -555,60 +651,115 @@ public sealed class WindowsPrintService : IPrintService
         double paperWidthMm,
         double paperHeightMm,
         float hardMarginX,
-        float hardMarginY,
-        Rectangle pageBounds,
-        bool allowBorderlessOverscanFill)
-    {
-        // 补偿物理硬边距，使 (0, 0) 精确对应物理纸张左上角
-        float offsetX = -hardMarginX;
-        float offsetY = -hardMarginY;
-        float targetW = (float)(paperWidthMm / 25.4 * 100.0);
-        float targetH = (float)(paperHeightMm / 25.4 * 100.0);
-
-        // 当驱动已处于无边距模式（硬边距为 0）且上报了略大于标称尺寸的过扫描画幅时，
-        // 满幅照片等比铺满并居中覆盖过扫描区，避免右侧/底侧留出细白边
-        if (allowBorderlessOverscanFill &&
-            hardMarginX <= 0.5f && hardMarginY <= 0.5f &&
-            pageBounds.Width > 0 && pageBounds.Height > 0 &&
-            (pageBounds.Width > targetW + 0.5f || pageBounds.Height > targetH + 0.5f))
-        {
-            float ratioW = pageBounds.Width / targetW;
-            float ratioH = pageBounds.Height / targetH;
-            if (ratioW >= 0.99f && ratioW <= 1.10f && ratioH >= 0.99f && ratioH <= 1.10f)
-            {
-                float cover = Math.Max(ratioW, ratioH);
-                float drawW = targetW * cover;
-                float drawH = targetH * cover;
-                return new RectangleF(
-                    (pageBounds.Width - drawW) * 0.5f,
-                    (pageBounds.Height - drawH) * 0.5f,
-                    drawW,
-                    drawH);
-            }
-        }
-
-        return new RectangleF(offsetX, offsetY, targetW, targetH);
-    }
+        float hardMarginY) => new(
+            -hardMarginX / 100f,
+            -hardMarginY / 100f,
+            (float)(paperWidthMm / UnitConverter.MmPerInch),
+            (float)(paperHeightMm / UnitConverter.MmPerInch));
 
     private static void DrawSkBitmapToPrinterGraphics(
         SKBitmap skBmp,
         double paperWidthMm,
         double paperHeightMm,
-        PrintPageEventArgs e,
-        bool allowBorderlessOverscanFill)
+        PrintPageEventArgs e)
     {
-        var g = e.Graphics!;
+        var (paperBounds, _) = ReadPaperGeometry(e.Graphics!, e.PageSettings, e.PageBounds);
+        VerifyPhysicalPaper(e.PageBounds, paperBounds);
+        DrawBitmapWithinPaper(skBmp, paperWidthMm, paperHeightMm, e.Graphics!, paperBounds);
+    }
+
+    private static (RectangleF Paper, RectangleF Printable) ReadPaperGeometry(Graphics g, PageSettings pageSettings, Rectangle pageBounds)
+    {
+        float dpiX = g.DpiX;
+        float dpiY = g.DpiY;
+        IntPtr hdc = g.GetHdc();
+        try
+        {
+            int width = GetDeviceCaps(hdc, PhysicalWidth);
+            int height = GetDeviceCaps(hdc, PhysicalHeight);
+            if (width > 0 && height > 0)
+            {
+                var paper = new RectangleF(
+                    -GetDeviceCaps(hdc, PhysicalOffsetX) / dpiX,
+                    -GetDeviceCaps(hdc, PhysicalOffsetY) / dpiY,
+                    width / dpiX,
+                    height / dpiY);
+                int printableW = GetDeviceCaps(hdc, PrintableWidth);
+                int printableH = GetDeviceCaps(hdc, PrintableHeight);
+                var printable = printableW > 0 && printableH > 0
+                    ? RectangleF.Intersect(paper, new RectangleF(0, 0, printableW / dpiX, printableH / dpiY))
+                    : paper;
+                return (paper, printable);
+            }
+        }
+        finally { g.ReleaseHdc(hdc); }
+
+        var fallback = new RectangleF(
+            -pageSettings.HardMarginX / 100f, -pageSettings.HardMarginY / 100f,
+            pageBounds.Width / 100f, pageBounds.Height / 100f);
+        return (fallback, fallback);
+    }
+
+    internal static void ValidatePrintableSlots(PrintSheet sheet, RectangleF paperBounds, RectangleF printableBounds,
+        PrinterCalibrationProfile calibration, bool backSide, int dpi)
+    {
+        if (!FreeformLayoutMath.CanOutput(sheet))
+            throw new InvalidOperationException($"{sheet.SheetName} 的照片框尺寸无效或超出了版面。");
+
+        var (sx, sy, dx, dy) = calibration.GetGeometryTransform(backSide);
+        double centerX = paperBounds.Left + paperBounds.Width / 2.0;
+        double centerY = paperBounds.Top + paperBounds.Height / 2.0;
+        double tolerance = 1.0 / dpi;
+        foreach (var slot in sheet.Slots.Where(slot => !string.IsNullOrEmpty(slot.PhotoAssetId)))
+        {
+            double left = centerX + ((slot.XMm - sheet.PaperWidthMm / 2) * sx + dx) / UnitConverter.MmPerInch;
+            double top = centerY + ((slot.YMm - sheet.PaperHeightMm / 2) * sy + dy) / UnitConverter.MmPerInch;
+            double right = left + slot.WidthMm * sx / UnitConverter.MmPerInch;
+            double bottom = top + slot.HeightMm * sy / UnitConverter.MmPerInch;
+            if (left < printableBounds.Left - tolerance || top < printableBounds.Top - tolerance ||
+                right > printableBounds.Right + tolerance || bottom > printableBounds.Bottom + tolerance)
+                throw new InvalidOperationException($"{sheet.SheetName} 第 {slot.Index + 1} 格放不进当前可打印区域。请调整版式留白，或选择支持该纸型无边距的驱动设置。");
+        }
+    }
+
+    internal static void VerifyPhysicalPaper(Rectangle expectedBounds, RectangleF actualBounds)
+    {
+        double width = expectedBounds.Width * UnitConverter.MmPerInch / 100.0;
+        double height = expectedBounds.Height * UnitConverter.MmPerInch / 100.0;
+        double actualWidth = actualBounds.Width * UnitConverter.MmPerInch;
+        double actualHeight = actualBounds.Height * UnitConverter.MmPerInch;
+
+        // 允许公制/英制纸型的标称差异和无边距模式略扩大的驱动画幅。
+        static bool IsCompatible(double expected, double actual) =>
+            actual >= expected - 3 && actual <= Math.Max(expected + 3, expected * 1.07 + 0.5);
+
+        if (!IsCompatible(width, actualWidth) || !IsCompatible(height, actualHeight))
+            throw new InvalidOperationException(
+                $"驱动实际使用 {actualWidth:0.##} × {actualHeight:0.##} mm 纸张，与所选纸型 {width:0.##} × {height:0.##} mm 不符。请在打印机驱动首选项选择与版面一致的纸型。");
+    }
+
+    internal static void DrawBitmapWithinPaper(
+        SKBitmap skBmp, double paperWidthMm, double paperHeightMm, Graphics g, RectangleF paperBounds)
+    {
+        var layout = ComputePrintDrawRect(paperWidthMm, paperHeightMm, 0, 0);
+        layout.Offset(
+            paperBounds.Left + (paperBounds.Width - layout.Width) * 0.5f,
+            paperBounds.Top + (paperBounds.Height - layout.Height) * 0.5f);
+        var destination = RectangleF.Intersect(layout, paperBounds);
+        if (destination.Width <= 0 || destination.Height <= 0) return;
+
+        float pixelsPerInchX = skBmp.Width / layout.Width;
+        float pixelsPerInchY = skBmp.Height / layout.Height;
+        var source = new RectangleF(
+            (destination.Left - layout.Left) * pixelsPerInchX,
+            (destination.Top - layout.Top) * pixelsPerInchY,
+            destination.Width * pixelsPerInchX,
+            destination.Height * pixelsPerInchY);
+
         g.InterpolationMode = InterpolationMode.HighQualityBicubic;
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-        g.PageUnit = GraphicsUnit.Display; // 1 unit = 1/100 inch
-
-        var drawRect = ComputePrintDrawRect(
-            paperWidthMm,
-            paperHeightMm,
-            e.PageSettings.HardMarginX,
-            e.PageSettings.HardMarginY,
-            e.PageBounds,
-            allowBorderlessOverscanFill);
+        g.PageUnit = GraphicsUnit.Inch;
+        g.SetClip(paperBounds, CombineMode.Intersect);
 
         using (var gdiBmp = ToGdiBitmap(skBmp))
         using (var attrs = new ImageAttributes())
@@ -616,11 +767,11 @@ public sealed class WindowsPrintService : IPrintService
             attrs.SetWrapMode(WrapMode.TileFlipXY);
             PointF[] destPoints =
             [
-                new(drawRect.Left, drawRect.Top),
-                new(drawRect.Right, drawRect.Top),
-                new(drawRect.Left, drawRect.Bottom)
+                new(destination.Left, destination.Top),
+                new(destination.Right, destination.Top),
+                new(destination.Left, destination.Bottom)
             ];
-            g.DrawImage(gdiBmp, destPoints, new RectangleF(0, 0, gdiBmp.Width, gdiBmp.Height), GraphicsUnit.Pixel, attrs);
+            g.DrawImage(gdiBmp, destPoints, source, GraphicsUnit.Pixel, attrs);
         }
         GC.KeepAlive(skBmp);
     }
@@ -630,6 +781,9 @@ public sealed class WindowsPrintService : IPrintService
         new(skBmp.Width, skBmp.Height, skBmp.RowBytes,
             skBmp.AlphaType == SKAlphaType.Premul ? PixelFormat.Format32bppPArgb : PixelFormat.Format32bppArgb,
             skBmp.GetPixels());
+
+    [DllImport("gdi32.dll")]
+    private static extern int GetDeviceCaps(IntPtr hdc, int index);
 
     [DllImport("winspool.drv", EntryPoint = "IsValidDevmodeW", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -661,4 +815,7 @@ public sealed class WindowsPrintService : IPrintService
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr GlobalFree(IntPtr hMem);
+
+    [DllImport("kernel32.dll")]
+    private static extern nuint GlobalSize(IntPtr hMem);
 }

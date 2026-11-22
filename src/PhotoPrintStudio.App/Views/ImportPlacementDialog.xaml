@@ -4,43 +4,54 @@
         xmlns:models="clr-namespace:PhotoPrintStudio.Core.Models;assembly=PhotoPrintStudio.Core"
         Title="导入与排版" Width="460" SizeToContent="Height" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource StudioWindow}"
         Background="{DynamicResource BrushBgPanel}">
-    <StackPanel Margin="20">
-        <TextBlock x:Name="SummaryText" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12" />
-        <RadioButton x:Name="PaginateChoice" Checked="Choice_Checked" Margin="0,0,0,8" />
-        <RadioButton x:Name="SmartChoice" Content="智能导入" Checked="Choice_Checked" Margin="0,0,0,8" />
-        <RadioButton x:Name="RepeatChoice" Checked="Choice_Checked" Margin="0,0,0,8" />
-        <RadioButton x:Name="PoolChoice" Content="仅加入素材池" Checked="Choice_Checked" />
-        <Grid x:Name="PlacementOptions" Margin="0,12,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="12" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <StackPanel x:Name="OrderOptions">
-                <TextBlock Text="铺放顺序" Margin="0,0,0,4" />
-                <ComboBox x:Name="OrderCombo" AutomationProperties.Name="铺放顺序" SelectedIndex="0" SelectionChanged="Choice_Checked">
-                    <ComboBoxItem Content="按模板顺序" Tag="{x:Static models:SlotFillOrder.Template}" />
-                    <ComboBoxItem Content="横向优先" Tag="{x:Static models:SlotFillOrder.RowFirst}" />
-                    <ComboBoxItem Content="纵向优先" Tag="{x:Static models:SlotFillOrder.ColumnFirst}" />
-                </ComboBox>
-            </StackPanel>
-            <StackPanel x:Name="FitOptions" Grid.Column="2">
-                <TextBlock Text="照片适配" Margin="0,0,0,4" />
-                <ComboBox x:Name="FitCombo" AutomationProperties.Name="照片适配" SelectedIndex="0" SelectionChanged="Choice_Checked">
-                    <ComboBoxItem Content="沿用设置" />
-                    <ComboBoxItem Content="填满格位" Tag="{x:Static models:FitMode.Cover}" />
-                    <ComboBoxItem Content="完整显示" Tag="{x:Static models:FitMode.Contain}" />
-                </ComboBox>
-            </StackPanel>
-        </Grid>
-        <CheckBox x:Name="AutoRotateChoice" Visibility="Collapsed" Content="自动旋转" IsChecked="True" Margin="0,10,0,0"
-                  Checked="Choice_Checked" Unchecked="Choice_Checked" />
-        <TextBlock x:Name="ResultText" TextWrapping="Wrap" Margin="0,12,0,16"
-                   Foreground="{DynamicResource BrushTextSecondary}" />
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="取消" IsCancel="True" Style="{StaticResource ModernButton}" MinWidth="72" Margin="0,0,8,0" />
-            <Button x:Name="ConfirmButton" IsDefault="True" Style="{StaticResource PrimaryButton}" MinWidth="96" Click="Confirm_Click" />
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <DockPanel Grid.Row="0">
+        <StackPanel Margin="20,16,20,14">
+            <TextBlock x:Name="SummaryText" FontSize="13.5" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12" />
+            <RadioButton x:Name="FillEmptyChoice" Content="填入本页空位" Checked="Choice_Checked" Margin="0,0,0,8" Visibility="Collapsed" />
+            <RadioButton x:Name="PaginateChoice" Checked="Choice_Checked" Margin="0,0,0,8" />
+            <RadioButton x:Name="SmartChoice" Content="智能导入" Checked="Choice_Checked" Margin="0,0,0,8" />
+            <RadioButton x:Name="RepeatChoice" Checked="Choice_Checked" Margin="0,0,0,8" />
+            <RadioButton x:Name="PoolChoice" Content="仅加入素材池" Checked="Choice_Checked" />
+            <Grid x:Name="PlacementOptions" Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel x:Name="OrderOptions">
+                    <TextBlock Text="铺放顺序" Style="{StaticResource FormLabel}" />
+                    <ComboBox x:Name="OrderCombo" AutomationProperties.Name="铺放顺序" SelectedIndex="0" SelectionChanged="Choice_Checked">
+                        <ComboBoxItem Content="按模板顺序" Tag="{x:Static models:SlotFillOrder.Template}" />
+                        <ComboBoxItem Content="横向优先" Tag="{x:Static models:SlotFillOrder.RowFirst}" />
+                        <ComboBoxItem Content="纵向优先" Tag="{x:Static models:SlotFillOrder.ColumnFirst}" />
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel x:Name="FitOptions" Grid.Column="2">
+                    <TextBlock Text="照片适配" Style="{StaticResource FormLabel}" />
+                    <ComboBox x:Name="FitCombo" AutomationProperties.Name="照片适配" SelectedIndex="0" SelectionChanged="Choice_Checked">
+                        <ComboBoxItem Content="沿用设置" />
+                        <ComboBoxItem Content="填满格位" Tag="{x:Static models:FitMode.Cover}" />
+                        <ComboBoxItem Content="完整显示" Tag="{x:Static models:FitMode.Contain}" />
+                    </ComboBox>
+                </StackPanel>
+            </Grid>
+            <CheckBox x:Name="AutoRotateChoice" Visibility="Collapsed" Content="自动旋转" IsChecked="True" Margin="0,10,0,0"
+                      Checked="Choice_Checked" Unchecked="Choice_Checked" />
+            <TextBlock x:Name="ResultText" Style="{StaticResource Caption}" Margin="0,12,0,0" />
         </StackPanel>
-    </StackPanel>
+        </DockPanel>
+        <Border Grid.Row="1" Style="{StaticResource DialogFooter}">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="取消" IsCancel="True" Style="{StaticResource DialogButton}" />
+                <Button x:Name="ConfirmButton" IsDefault="True" Style="{StaticResource DialogPrimaryButton}" Click="Confirm_Click" />
+            </StackPanel>
+        </Border>
+    </Grid>
 </Window>

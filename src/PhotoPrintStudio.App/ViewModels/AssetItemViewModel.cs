@@ -12,7 +12,12 @@ public partial class AssetItemViewModel : ObservableObject
     private BitmapSource? _thumbnail;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPlaced))]
+    [NotifyPropertyChangedFor(nameof(UsageBadgeText))]
     private int _usageCount;
+
+    public bool IsPlaced => UsageCount > 0;
+    public string UsageBadgeText => UsageCount > 0 ? $"×{UsageCount}" : "未排";
 
     [ObservableProperty]
     private bool _isSelected;

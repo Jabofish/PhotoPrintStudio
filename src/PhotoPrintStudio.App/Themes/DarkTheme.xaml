@@ -1,35 +1,34 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <!-- 夜 / 专业暗房中灰层级体系 (Level 0..3) -->
-    <Color x:Key="ColorBgCanvasWell">#0E1014</Color>
-    <Color x:Key="ColorBgHeader">#15171C</Color>
-    <Color x:Key="ColorBgPanel">#181A20</Color>
-    <Color x:Key="ColorBgCard">#20232B</Color>
-    <Color x:Key="ColorBgInput">#13151A</Color>
-    <Color x:Key="ColorBgHover">#2A2E38</Color>
-    <Color x:Key="ColorBgSelected">#1C3252</Color>
-    <Color x:Key="ColorBgHud">#E61B1E26</Color>
-
-    <Color x:Key="ColorBorderSubtle">#272B35</Color>
-    <Color x:Key="ColorBorderStrong">#3A404E</Color>
-
-    <Color x:Key="ColorTextPrimary">#F1F5F9</Color>
-    <Color x:Key="ColorTextSecondary">#9AA3B2</Color>
-    <Color x:Key="ColorTextMuted">#646D7E</Color>
-
-    <Color x:Key="ColorAccent">#3B82F6</Color>
-    <Color x:Key="ColorAccentHover">#60A5FA</Color>
-    <Color x:Key="ColorAccentPressed">#2563EB</Color>
-    <Color x:Key="ColorAccentSoft">#1A2E4D</Color>
+    <!-- 暗色：中性灰层级（参考专业修图软件） -->
+    <Color x:Key="ColorBgCanvasWell">#1A1A1A</Color>
+    <Color x:Key="ColorBgHeader">#1F1F1F</Color>
+    <Color x:Key="ColorBgPanel">#262626</Color>
+    <Color x:Key="ColorBgCard">#2D2D2D</Color>
+    <Color x:Key="ColorBgInput">#1C1C1C</Color>
+    <Color x:Key="ColorBgHover">#343434</Color>
+    <Color x:Key="ColorBgSelected">#253A54</Color>
+    <Color x:Key="ColorBgRaised">#3D3D3D</Color>
+    <Color x:Key="ColorBgHud">#F02A2A2A</Color>
+    <Color x:Key="ColorBorderSubtle">#333333</Color>
+    <Color x:Key="ColorBorderStrong">#484848</Color>
+    <Color x:Key="ColorTextPrimary">#E6E6E6</Color>
+    <Color x:Key="ColorTextSecondary">#ABABAB</Color>
+    <Color x:Key="ColorTextMuted">#7E7E7E</Color>
+    <Color x:Key="ColorAccent">#378EF0</Color>
+    <Color x:Key="ColorAccentHover">#4B9CF5</Color>
+    <Color x:Key="ColorAccentPressed">#2680EB</Color>
+    <Color x:Key="ColorAccentSoft">#1F3048</Color>
+    <Color x:Key="ColorFocusRing">#B3378EF0</Color>
     <Color x:Key="ColorAccentText">#FFFFFF</Color>
-
-    <Color x:Key="ColorStatusOk">#10B981</Color>
-    <Color x:Key="ColorStatusOkSoft">#12382C</Color>
-    <Color x:Key="ColorStatusWarn">#F59E0B</Color>
-    <Color x:Key="ColorStatusWarnSoft">#3B2B12</Color>
-    <Color x:Key="ColorStatusError">#EF4444</Color>
-    <Color x:Key="ColorStatusErrorSoft">#3E181A</Color>
+    <Color x:Key="ColorStatusOk">#2D9D78</Color>
+    <Color x:Key="ColorStatusOkSoft">#1B3A30</Color>
+    <Color x:Key="ColorStatusWarn">#E68619</Color>
+    <Color x:Key="ColorStatusWarnSoft">#3D2C16</Color>
+    <Color x:Key="ColorStatusError">#E34850</Color>
+    <Color x:Key="ColorStatusErrorSoft">#43222A</Color>
+    <Color x:Key="ColorSliderThumb">#D9D9D9</Color>
 
     <SolidColorBrush x:Key="BrushBgCanvasWell" Color="{StaticResource ColorBgCanvasWell}" />
     <SolidColorBrush x:Key="BrushBgHeader" Color="{StaticResource ColorBgHeader}" />
@@ -38,28 +37,27 @@
     <SolidColorBrush x:Key="BrushBgInput" Color="{StaticResource ColorBgInput}" />
     <SolidColorBrush x:Key="BrushBgHover" Color="{StaticResource ColorBgHover}" />
     <SolidColorBrush x:Key="BrushBgSelected" Color="{StaticResource ColorBgSelected}" />
+    <SolidColorBrush x:Key="BrushBgRaised" Color="{StaticResource ColorBgRaised}" />
     <SolidColorBrush x:Key="BrushBgHud" Color="{StaticResource ColorBgHud}" />
-
     <SolidColorBrush x:Key="BrushBorderSubtle" Color="{StaticResource ColorBorderSubtle}" />
     <SolidColorBrush x:Key="BrushBorderStrong" Color="{StaticResource ColorBorderStrong}" />
-
     <SolidColorBrush x:Key="BrushTextPrimary" Color="{StaticResource ColorTextPrimary}" />
     <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource ColorTextSecondary}" />
     <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource ColorTextMuted}" />
-
     <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource ColorAccent}" />
     <SolidColorBrush x:Key="BrushAccentHover" Color="{StaticResource ColorAccentHover}" />
     <SolidColorBrush x:Key="BrushAccentPressed" Color="{StaticResource ColorAccentPressed}" />
     <SolidColorBrush x:Key="BrushAccentSoft" Color="{StaticResource ColorAccentSoft}" />
+    <SolidColorBrush x:Key="BrushFocusRing" Color="{StaticResource ColorFocusRing}" />
     <SolidColorBrush x:Key="BrushAccentText" Color="{StaticResource ColorAccentText}" />
-
     <SolidColorBrush x:Key="BrushStatusOk" Color="{StaticResource ColorStatusOk}" />
     <SolidColorBrush x:Key="BrushStatusOkSoft" Color="{StaticResource ColorStatusOkSoft}" />
     <SolidColorBrush x:Key="BrushStatusWarn" Color="{StaticResource ColorStatusWarn}" />
     <SolidColorBrush x:Key="BrushStatusWarnSoft" Color="{StaticResource ColorStatusWarnSoft}" />
     <SolidColorBrush x:Key="BrushStatusError" Color="{StaticResource ColorStatusError}" />
     <SolidColorBrush x:Key="BrushStatusErrorSoft" Color="{StaticResource ColorStatusErrorSoft}" />
-    <SolidColorBrush x:Key="BrushRulerBg" Color="#14161B" />
-    <SolidColorBrush x:Key="BrushRulerTick" Color="#646D7E" />
+    <SolidColorBrush x:Key="BrushSliderThumb" Color="{StaticResource ColorSliderThumb}" />
+    <SolidColorBrush x:Key="BrushRulerBg" Color="#202020" />
+    <SolidColorBrush x:Key="BrushRulerTick" Color="#7E7E7E" />
 
 </ResourceDictionary>

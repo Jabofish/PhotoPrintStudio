@@ -7,13 +7,24 @@ namespace PhotoPrintStudio.App.Controls;
 
 public sealed class ToneCurveControl : FrameworkElement
 {
+    private const double MinimumPointSpacing = 0.015;
     public static readonly DependencyProperty CurvesProperty =
         DependencyProperty.Register(nameof(Curves), typeof(ToneCurveData), typeof(ToneCurveControl),
-            new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+            new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnCurvesOrChannelChanged));
 
     public static readonly DependencyProperty ActiveChannelProperty =
         DependencyProperty.Register(nameof(ActiveChannel), typeof(int), typeof(ToneCurveControl),
-            new FrameworkPropertyMetadata(0, FrameworkPropertyMetadataOptions.AffectsRender));
+            new FrameworkPropertyMetadata(0, FrameworkPropertyMetadataOptions.AffectsRender, OnCurvesOrChannelChanged));
+
+    private static void OnCurvesOrChannelChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        var ctrl = (ToneCurveControl)d;
+        if (ctrl._dragIndex < 0 && ctrl._hoverIndex >= 0)
+        {
+            ctrl._hoverIndex = -1;
+            ctrl.Cursor = Cursors.Cross;
+        }
+    }
 
     public ToneCurveData? Curves
     {
@@ -32,16 +43,16 @@ public sealed class ToneCurveControl : FrameworkElement
     public event EventHandler? CurveEditStarted;
     public event EventHandler? CurveEditCompleted;
 
-    private static readonly Brush FallbackBgBrush = Freeze(new SolidColorBrush(Color.FromRgb(24, 26, 32)));
-    private static readonly Brush FallbackBorderBrush = Freeze(new SolidColorBrush(Color.FromRgb(62, 68, 84)));
-    private static readonly Pen GridPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(45, 148, 163, 184))), 1));
-    private static readonly Pen DiagPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(80, 148, 163, 184))), 1) { DashStyle = DashStyles.Dash });
+    private static readonly Brush FallbackBgBrush = Freeze(new SolidColorBrush(Color.FromRgb(28, 28, 28)));
+    private static readonly Brush FallbackBorderBrush = Freeze(new SolidColorBrush(Color.FromRgb(72, 72, 72)));
+    private static readonly Pen GridPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(45, 160, 160, 160))), 1));
+    private static readonly Pen DiagPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(80, 160, 160, 160))), 1) { DashStyle = DashStyles.Dash });
     private static readonly Pen PointBorderPen = Freeze(new Pen(Brushes.White, 1.5));
     private static readonly Brush RedBrush = Freeze(new SolidColorBrush(Color.FromRgb(239, 68, 68)));
     private static readonly Brush GreenBrush = Freeze(new SolidColorBrush(Color.FromRgb(34, 197, 94)));
     private static readonly Brush BlueBrush = Freeze(new SolidColorBrush(Color.FromRgb(59, 130, 246)));
-    private static readonly Brush MasterDarkBrush = Freeze(new SolidColorBrush(Color.FromRgb(226, 232, 240)));
-    private static readonly Brush MasterLightBrush = Freeze(new SolidColorBrush(Color.FromRgb(30, 41, 59)));
+    private static readonly Brush MasterDarkBrush = Freeze(new SolidColorBrush(Color.FromRgb(230, 230, 230)));
+    private static readonly Brush MasterLightBrush = Freeze(new SolidColorBrush(Color.FromRgb(40, 40, 40)));
     private static readonly Pen RedPen = Freeze(new Pen(RedBrush, 2.0));
     private static readonly Pen GreenPen = Freeze(new Pen(GreenBrush, 2.0));
     private static readonly Pen BluePen = Freeze(new Pen(BlueBrush, 2.0));
@@ -54,7 +65,12 @@ public sealed class ToneCurveControl : FrameworkElement
         return freezable;
     }
 
+    private static readonly Brush TooltipBgBrush = Freeze(new SolidColorBrush(Color.FromArgb(190, 15, 23, 42)));
+    private static readonly Pen HoverHaloDarkPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(165, 255, 255, 255))), 1.5));
+    private static readonly Pen HoverHaloLightPen = Freeze(new Pen(Freeze(new SolidColorBrush(Color.FromArgb(165, 37, 99, 235))), 1.5));
+
     private int _dragIndex = -1;
+    private int _hoverIndex = -1;
     private bool _hasStartedDrag;
 
     public ToneCurveControl()
@@ -62,6 +78,11 @@ public sealed class ToneCurveControl : FrameworkElement
         Cursor = Cursors.Cross;
         ClipToBounds = true;
     }
+
+    private static bool IsChannelLinear(List<CurvePoint> pts) =>
+        pts.Count == 2 &&
+        Math.Abs(pts[0].X) < 1e-4 && Math.Abs(pts[0].Y) < 1e-4 &&
+        Math.Abs(pts[1].X - 1.0) < 1e-4 && Math.Abs(pts[1].Y - 1.0) < 1e-4;
 
     private List<CurvePoint> GetActivePoints()
     {
@@ -128,23 +149,47 @@ public sealed class ToneCurveControl : FrameworkElement
         geom.Freeze();
         dc.DrawGeometry(null, linePen, geom);
 
+        var hoverPen = Themes.ThemeManager.IsDarkTheme ? HoverHaloDarkPen : HoverHaloLightPen;
         for (int i = 0; i < pts.Count; i++)
         {
             double cx = pad + pts[i].X * innerW;
             double cy = pad + (1.0 - pts[i].Y) * innerH;
+            if (i == _hoverIndex || i == _dragIndex)
+                dc.DrawEllipse(null, hoverPen, new Point(cx, cy), 7.0, 7.0);
             dc.DrawEllipse(i == _dragIndex ? Brushes.White : ptBrush, PointBorderPen, new Point(cx, cy), 4.5, 4.5);
+        }
+
+        int readoutIndex = _dragIndex >= 0 ? _dragIndex : _hoverIndex;
+        if (readoutIndex >= 0 && readoutIndex < pts.Count)
+        {
+            int inVal = (int)Math.Round(pts[readoutIndex].X * 255);
+            int outVal = (int)Math.Round(pts[readoutIndex].Y * 255);
+            var ft = new FormattedText(
+                $"{inVal} → {outVal}",
+                System.Globalization.CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight,
+                new Typeface("Segoe UI"),
+                10.5,
+                Brushes.White,
+                VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            var pill = new Rect(pad + 2, pad + 2, ft.Width + 10, ft.Height + 4);
+            dc.DrawRoundedRectangle(TooltipBgBrush, null, pill, 3, 3);
+            dc.DrawText(ft, new Point(pill.X + 5, pill.Y + 2));
         }
     }
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
+        var pts = GetActivePoints();
         if (e.ClickCount == 2)
         {
+            if (IsChannelLinear(pts)) return;
             CurveEditStarted?.Invoke(this, EventArgs.Empty);
-            var list = GetActivePoints();
-            list.Clear();
-            list.AddRange(ToneCurveData.DefaultLinear());
+            pts.Clear();
+            pts.AddRange(ToneCurveData.DefaultLinear());
+            _hoverIndex = -1;
+            Cursor = Cursors.Cross;
             InvalidateVisual();
             CurveChanged?.Invoke(this, EventArgs.Empty);
             CurveEditCompleted?.Invoke(this, EventArgs.Empty);
@@ -153,15 +198,16 @@ public sealed class ToneCurveControl : FrameworkElement
 
         var pos = e.GetPosition(this);
         (double nx, double ny) = ToNormalized(pos);
-        var pts = GetActivePoints();
 
         int hit = FindNearestPointIndex(pos, 10.0);
+        if (hit < 0 && pts.Any(point => Math.Abs(point.X - nx) < MinimumPointSpacing)) return;
         CurveEditStarted?.Invoke(this, EventArgs.Empty);
         _hasStartedDrag = true;
 
         if (hit >= 0)
         {
             _dragIndex = hit;
+            _hoverIndex = hit;
         }
         else
         {
@@ -169,38 +215,78 @@ public sealed class ToneCurveControl : FrameworkElement
             pts.Add(newPt);
             pts.Sort((a, b) => a.X.CompareTo(b.X));
             _dragIndex = pts.IndexOf(newPt);
+            _hoverIndex = _dragIndex;
             InvalidateVisual();
             CurveChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        CaptureMouse();
+        if (!CaptureMouse()) FinishCurveDrag();
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        if (_dragIndex < 0 || !IsMouseCaptured) return;
+        var pos = e.GetPosition(this);
+        if (_dragIndex < 0 || !IsMouseCaptured)
+        {
+            int nextHover = FindNearestPointIndex(pos, 10.0);
+            if (nextHover != _hoverIndex)
+            {
+                _hoverIndex = nextHover;
+                Cursor = _hoverIndex >= 0 ? Cursors.Hand : Cursors.Cross;
+                InvalidateVisual();
+            }
+            return;
+        }
 
         var pts = GetActivePoints();
         if (_dragIndex >= pts.Count) return;
 
-        (double nx, double ny) = ToNormalized(e.GetPosition(this));
-        double minX = _dragIndex == 0 ? 0.0 : pts[_dragIndex - 1].X + 0.015;
-        double maxX = _dragIndex == pts.Count - 1 ? 1.0 : pts[_dragIndex + 1].X - 0.015;
+        (double nx, double ny) = ToNormalized(pos);
+        var point = pts[_dragIndex];
+        double minX = _dragIndex == 0 ? 0.0 : pts[_dragIndex - 1].X + MinimumPointSpacing;
+        double maxX = _dragIndex == pts.Count - 1 ? 1.0 : pts[_dragIndex + 1].X - MinimumPointSpacing;
         if (_dragIndex == 0) maxX = Math.Min(0.45, maxX);
         if (_dragIndex == pts.Count - 1) minX = Math.Max(0.55, minX);
 
-        pts[_dragIndex].X = Math.Clamp(nx, minX, maxX);
-        pts[_dragIndex].Y = Math.Clamp(ny, 0.0, 1.0);
+        // Projects saved before point spacing was enforced can contain closer neighbors.
+        double clampedX = Math.Clamp(nx, Math.Min(minX, point.X), Math.Max(maxX, point.X));
+        double clampedY = Math.Clamp(ny, 0.0, 1.0);
+        if (Math.Abs(pts[_dragIndex].X - clampedX) > 1e-5 || Math.Abs(pts[_dragIndex].Y - clampedY) > 1e-5)
+        {
+            pts[_dragIndex].X = clampedX;
+            pts[_dragIndex].Y = clampedY;
+            InvalidateVisual();
+            CurveChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
 
-        InvalidateVisual();
-        CurveChanged?.Invoke(this, EventArgs.Empty);
+    protected override void OnMouseLeave(MouseEventArgs e)
+    {
+        base.OnMouseLeave(e);
+        if (_dragIndex < 0 && _hoverIndex >= 0)
+        {
+            _hoverIndex = -1;
+            Cursor = Cursors.Cross;
+            InvalidateVisual();
+        }
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
         if (IsMouseCaptured) ReleaseMouseCapture();
+        FinishCurveDrag();
+    }
+
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        FinishCurveDrag();
+    }
+
+    private void FinishCurveDrag()
+    {
         if (_dragIndex >= 0)
         {
             _dragIndex = -1;
@@ -222,6 +308,8 @@ public sealed class ToneCurveControl : FrameworkElement
         {
             CurveEditStarted?.Invoke(this, EventArgs.Empty);
             pts.RemoveAt(hit);
+            _hoverIndex = -1;
+            Cursor = Cursors.Cross;
             InvalidateVisual();
             CurveChanged?.Invoke(this, EventArgs.Empty);
             CurveEditCompleted?.Invoke(this, EventArgs.Empty);

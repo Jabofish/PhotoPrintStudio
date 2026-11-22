@@ -1,4 +1,4 @@
-param([string]$Version = '1.0.0', [switch]$SkipTests)
+param([string]$Version = '1.0.1', [switch]$SkipTests)
 $ErrorActionPreference = 'Stop'
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected a version such as 1.0.0.' }
 $repo = Split-Path -Parent $PSScriptRoot
@@ -42,6 +42,7 @@ try {
     }
 
     Copy-Item -LiteralPath 'LICENSE','THIRD-PARTY-NOTICES.md','docs/使用手册.md','assets/portable/启动诊断.cmd' -Destination $package
+    Copy-Item -LiteralPath 'docs/images' -Destination $package -Recurse
     $licenseDir = Join-Path $package 'assets\licenses'
     New-Item -ItemType Directory -Path (Split-Path -Parent $licenseDir) -Force | Out-Null
     Copy-Item -LiteralPath 'assets/licenses' -Destination $licenseDir -Recurse

@@ -100,6 +100,7 @@ public partial class MainWindow
         _syncingPages = true;
         try { drag.List.ReplaceSelection(selected); }
         finally { _syncingAssetSelection = _syncingPages = false; }
+        if (drag.List == PagePreviewList) UpdateSelectedPagesButton();
     }
 
     private void ScrollTrayMarquee(object? sender, EventArgs e)
@@ -114,12 +115,25 @@ public partial class MainWindow
 
     private void AssetsList_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        var clicked = _assetDragCandidate;
+        bool deferredReset = _deferAssetMultiSelectReset;
         _assetDragCandidate = null;
-        if (_trayMarquee is not { } drag || drag.List != AssetsList) return;
-        if (_trayMarqueeStarted) UpdateTrayMarquee(e.GetPosition(drag.Viewport));
-        else if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) AssetsList.UnselectAll();
-        AssetsList.ReleaseMouseCapture();
-        e.Handled = true;
+        _deferAssetMultiSelectReset = false;
+        if (_trayMarquee is { } drag && drag.List == AssetsList)
+        {
+            if (_trayMarqueeStarted) UpdateTrayMarquee(e.GetPosition(drag.Viewport));
+            else if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) AssetsList.UnselectAll();
+            AssetsList.ReleaseMouseCapture();
+            e.Handled = true;
+            return;
+        }
+        if (deferredReset && clicked != null)
+        {
+            _syncingAssetSelection = true;
+            try { AssetsList.ReplaceSelection(new[] { clicked }); }
+            finally { _syncingAssetSelection = false; }
+            SelectAssetFromTray(clicked);
+        }
     }
 
     private void AssetsList_LostMouseCapture(object sender, MouseEventArgs e)
@@ -144,6 +158,8 @@ public partial class MainWindow
 
     private void ShowPageTray(bool showPages)
     {
+        PhotosTrayTab.IsChecked = !showPages;
+        PagesTrayTab.IsChecked = showPages;
         if (_expandedAssetTrayHeight is { } height)
         {
             AssetTrayRow.Height = height;
@@ -151,11 +167,12 @@ public partial class MainWindow
             TrayContent.Visibility = Visibility.Visible;
         }
         AssetActions.Visibility = AssetsList.Visibility = showPages ? Visibility.Collapsed : Visibility.Visible;
-        PagePreviewList.Visibility = showPages ? Visibility.Visible : Visibility.Collapsed;
+        PageActions.Visibility = PagePreviewList.Visibility = showPages ? Visibility.Visible : Visibility.Collapsed;
         if (showPages)
         {
             PagePreviewList.Focus();
             SyncPageTraySelection();
+            UpdateSelectedPagesButton();
             QueuePagePreviews();
         }
         else
@@ -166,8 +183,152 @@ public partial class MainWindow
         }
     }
 
+    private void UpdateSelectedPagesButton()
+    {
+        if (SelectedPagesButton == null || PagePreviewList == null) return;
+        int count = PagePreviewList.SelectedItems.Count;
+        SelectedPagesButton.Content = $"已选 {count} 页";
+        SelectedPagesButton.IsEnabled = count > 1;
+        SelectedPagesButton.Visibility = count > 1 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void SelectedPages_Click(object sender, RoutedEventArgs e)
+    {
+        var pages = PagePreviewList.SelectedItems.Cast<PrintSheet>().ToArray();
+        if (pages.Length == 0) return;
+
+        var clearItem = new MenuItem
+        {
+            Header = $"清空所选 {pages.Length} 页照片",
+            IsEnabled = pages.Any(MainViewModel.HasPlacedPhotos)
+        };
+        clearItem.Click += (_, _) => ClearSelectedPages(pages);
+
+        var deleteItem = new MenuItem
+        {
+            Header = $"删除所选 {pages.Length} 页",
+            InputGestureText = "Delete",
+            IsEnabled = _vm.Sheets.Count > 1
+        };
+        deleteItem.Click += (_, _) => DeleteSelectedPages();
+
+        ShowMenu(sender, clearItem, deleteItem);
+    }
+
+    private void ClearSelectedPages(IReadOnlyCollection<PrintSheet> pages)
+    {
+        int cleared = _vm.ClearSheetsSlots(pages);
+        if (cleared > 0)
+            _vm.ShowToast($"已清空所选 {pages.Count} 页中的 {cleared} 个格位（照片仍保留在素材池，可撤销）");
+    }
+
+    private void PagePreviewList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var page = e.OriginalSource is DependencyObject element &&
+            ItemsControl.ContainerFromElement(PagePreviewList, element) is ListBoxItem item
+            ? item.DataContext as PrintSheet : null;
+        if (page != null && !PagePreviewList.SelectedItems.Contains(page))
+        {
+            _syncingPages = true;
+            try
+            {
+                PagePreviewList.ReplaceSelection(new[] { page });
+                _pageSelectionAnchor = page;
+                ActivatePageFromTray(page);
+            }
+            finally { _syncingPages = false; }
+            UpdateSelectedPagesButton();
+        }
+    }
+
+    private void PagePreviewList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (PagePreviewList.ContextMenu is not { } menu) return;
+        menu.Items.Clear();
+
+        var clickedPage = e.CursorLeft < 0 ? PagePreviewList.SelectedItem as PrintSheet :
+            e.OriginalSource is DependencyObject element &&
+            ItemsControl.ContainerFromElement(PagePreviewList, element) is ListBoxItem item
+            ? item.DataContext as PrintSheet : null;
+        var selected = PagePreviewList.SelectedItems.Cast<PrintSheet>().ToArray();
+
+        if (clickedPage != null && selected.Length > 1 && selected.Contains(clickedPage))
+        {
+            var clearMulti = new MenuItem
+            {
+                Header = $"清空所选 {selected.Length} 页照片",
+                IsEnabled = selected.Any(MainViewModel.HasPlacedPhotos)
+            };
+            clearMulti.Click += (_, _) => ClearSelectedPages(selected);
+            var deleteMulti = new MenuItem
+            {
+                Header = $"删除所选 {selected.Length} 页",
+                InputGestureText = "Delete",
+                IsEnabled = _vm.Sheets.Count > 1
+            };
+            deleteMulti.Click += (_, _) => DeleteSelectedPages();
+            menu.Items.Add(clearMulti);
+            menu.Items.Add(deleteMulti);
+            return;
+        }
+
+        if (clickedPage != null)
+        {
+            int idx = _vm.Sheets.IndexOf(clickedPage);
+            var dupItem = new MenuItem { Header = "复制此页", InputGestureText = "Ctrl+Shift+D" };
+            dupItem.Click += (_, _) =>
+            {
+                ActivatePageFromTray(clickedPage);
+                _vm.DuplicateActiveSheetCommand.Execute(null);
+            };
+            var insertAfter = new MenuItem { Header = "在此页后新增空白页" };
+            insertAfter.Click += (_, _) => _vm.InsertBlankSheetAfter(clickedPage);
+
+            var moveLeft = new MenuItem { Header = "前移一页", IsEnabled = idx > 0 };
+            moveLeft.Click += (_, _) => { if (_vm.MoveSheet(clickedPage, -1)) SyncPageTraySelection(); };
+            var moveRight = new MenuItem { Header = "后移一页", IsEnabled = idx >= 0 && idx < _vm.Sheets.Count - 1 };
+            moveRight.Click += (_, _) => { if (_vm.MoveSheet(clickedPage, 1)) SyncPageTraySelection(); };
+
+            var clearItem = new MenuItem
+            {
+                Header = "清空此页照片",
+                IsEnabled = MainViewModel.HasPlacedPhotos(clickedPage)
+            };
+            clearItem.Click += (_, _) => ClearSelectedPages([clickedPage]);
+
+            var deleteItem = new MenuItem
+            {
+                Header = "删除此页",
+                InputGestureText = "Delete",
+                IsEnabled = _vm.Sheets.Count > 1
+            };
+            deleteItem.Click += (_, _) =>
+            {
+                int removed = _vm.RemoveSheets([clickedPage]);
+                if (removed > 0) _vm.ShowToast("已删除该页，可撤销");
+                SyncPageTraySelection();
+            };
+
+            menu.Items.Add(dupItem);
+            menu.Items.Add(insertAfter);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(moveLeft);
+            menu.Items.Add(moveRight);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(clearItem);
+            menu.Items.Add(deleteItem);
+            return;
+        }
+
+        menu.Items.Add(new MenuItem { Header = "新增空白页", InputGestureText = "Ctrl+Shift+N", Command = _vm.AddBlankSheetCommand });
+        var removeEmpty = new MenuItem { Header = "删除所有空白页", IsEnabled = _vm.HasRemovableEmptySheets };
+        removeEmpty.Click += (_, _) => { _vm.RemoveEmptySheets(); SyncPageTraySelection(); };
+        menu.Items.Add(removeEmpty);
+    }
+
     private void PagePreviewList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        UpdateSelectedPagesButton();
         if (_syncingPages || !PagePreviewList.IsVisible || PagePreviewList.SelectedItems.Count != 1 ||
             e.AddedItems.Count != 1 || e.AddedItems[0] is not PrintSheet page) return;
         _pageSelectionAnchor = page;
@@ -188,6 +349,7 @@ public partial class MainWindow
             PagePreviewList.ScrollIntoView(page);
         }
         finally { _syncingPages = false; }
+        UpdateSelectedPagesButton();
     }
 
     private void ActivatePageFromTray(PrintSheet page)
@@ -261,6 +423,7 @@ public partial class MainWindow
             }
         }
         finally { _syncingPages = false; }
+        UpdateSelectedPagesButton();
     }
 
     private void DeleteSelectedPages()

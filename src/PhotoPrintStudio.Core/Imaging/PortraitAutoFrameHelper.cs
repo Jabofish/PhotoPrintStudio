@@ -34,7 +34,7 @@ public static class PortraitAutoFrameHelper
 {
     public static (double TrimWmm, double TrimHmm, double BleedMm) ResolveUprightSlotPhotoFrameMm(LayoutSlot slot)
     {
-        bool swapped = Math.Abs(Math.Abs(slot.SlotRotationDegrees) - 90.0) < 1.0;
+        bool swapped = slot.IsQuarterTurnRotated;
         double w = swapped ? slot.HeightMm : slot.WidthMm;
         double h = swapped ? slot.WidthMm : slot.HeightMm;
 

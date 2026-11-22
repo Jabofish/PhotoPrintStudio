@@ -51,7 +51,7 @@ public class LayoutEngineTests
     [InlineData("tpl_6in_2in1_border")]
     [InlineData("tpl_6in_2in1_vert")]
     [InlineData("tpl_6in_2in1_card_duplex")]
-    [InlineData("tpl_6in_2in1_compare")]
+    [InlineData("tpl_6in_2in1_left")]
     public void SixInchTwoInOne_AllTemplates_ShouldProduceExactlyTwoSlots(string templateId)
     {
         var paper6 = PaperSizeSpec.BuiltInPapers.First(p => p.Id == "paper_6inch");

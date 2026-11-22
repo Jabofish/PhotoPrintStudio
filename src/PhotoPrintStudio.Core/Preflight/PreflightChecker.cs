@@ -63,6 +63,13 @@ public static class PreflightChecker
                 continue;
             }
 
+            if (!slot.HasValidPhotoArea)
+            {
+                issues.Add(new PreflightIssue(PreflightSeverity.Error, "排版",
+                    $"格位 {slot.Index + 1} 的拍立得相框没有可用的照片区域。", slot.Id));
+                continue;
+            }
+
             if (string.IsNullOrEmpty(slot.PhotoAssetId) || !assetsById.TryGetValue(slot.PhotoAssetId, out var asset))
             {
                 emptyCount++;
@@ -70,7 +77,7 @@ public static class PreflightChecker
             }
 
             // 1. 有效物理分辨率检测 (按资产去重聚合)
-            bool rotated = Math.Abs(Math.Abs(slot.SlotRotationDegrees) - 90.0) < 1.0;
+            bool rotated = slot.IsQuarterTurnRotated;
             double targetWmm = slot.PolaroidStyle != null
                 ? Math.Max(1, slot.WidthMm - (rotated
                     ? slot.PolaroidStyle.MarginTopMm + slot.PolaroidStyle.MarginBottomMm
@@ -90,7 +97,7 @@ public static class PreflightChecker
                 double zoom = Math.Clamp(asset.EditState.Zoom * slot.SlotZoom, 0.5, 8.0);
                 double trueDpiW = (srcW / zoom) / (targetWmm / UnitConverter.MmPerInch);
                 double trueDpiH = (srcH / zoom) / (targetHmm / UnitConverter.MmPerInch);
-                double minDpi = (slot.FitModeOverride ?? asset.EditState.FitMode) == FitMode.Cover
+                double minDpi = (slot.EffectiveFitMode ?? asset.EditState.FitMode) == FitMode.Cover
                     ? Math.Min(trueDpiW, trueDpiH) : Math.Max(trueDpiW, trueDpiH);
 
                 if (minDpi < 220)

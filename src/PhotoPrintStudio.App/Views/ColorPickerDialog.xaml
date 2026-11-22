@@ -3,50 +3,60 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:PhotoPrintStudio.App.Controls"
         Title="自定义颜色选择器"
-        Width="390" Height="370"
+        Width="400" SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
+        Style="{StaticResource StudioWindow}"
         Background="{DynamicResource BrushBgPanel}">
-    <Grid Margin="18">
+    <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+        <DockPanel Grid.Row="0">
+        <Grid Margin="20,16,20,12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <!-- 实时颜色对比条 & Hex 输入 -->
-        <Grid Grid.Row="0" Margin="0,0,0,14">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="52" />
-                <ColumnDefinition Width="12" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <Border x:Name="PreviewSwatch" Grid.Column="0" Height="46" CornerRadius="8"
-                    BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" />
-            <StackPanel Grid.Column="2" VerticalAlignment="Center">
-                <TextBlock Text="十六进制色值 (Hex #RRGGBB)" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,0,0,4" />
-                <TextBox x:Name="HexInput" Height="28" Padding="8,3" VerticalContentAlignment="Center"
-                         TextChanged="HexInput_TextChanged" />
+            <!-- 预览与 Hex 输入 -->
+            <Grid Grid.Row="0" Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="52" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="PreviewSwatch" Grid.Column="0" Height="46" CornerRadius="4"
+                        BorderBrush="{DynamicResource BrushBorderStrong}" BorderThickness="1" />
+                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                    <TextBlock Text="Hex（#RRGGBB）" Style="{StaticResource FormLabel}" />
+                    <TextBox x:Name="HexInput" AutomationProperties.Name="颜色 Hex 值"
+                             TextChanged="HexInput_TextChanged" />
+                </StackPanel>
+            </Grid>
+
+            <!-- RGB 滑块 -->
+            <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                <controls:StudioSliderRow x:Name="SliderR" LabelWidth="24" Title="R" Minimum="0" Maximum="255" Step="1" DefaultValue="255" ValueFormat="0" />
+                <controls:StudioSliderRow x:Name="SliderG" LabelWidth="24" Title="G" Minimum="0" Maximum="255" Step="1" DefaultValue="255" ValueFormat="0" />
+                <controls:StudioSliderRow x:Name="SliderB" LabelWidth="24" Title="B" Minimum="0" Maximum="255" Step="1" DefaultValue="255" ValueFormat="0" />
             </StackPanel>
+
+            <!-- 常用颜色 -->
+            <TextBlock Grid.Row="2" Text="常用颜色" Style="{StaticResource FormLabel}" Margin="0,2,0,6" />
+            <WrapPanel Grid.Row="3" x:Name="QuickPalette" />
+
         </Grid>
-
-        <!-- RGB 滑块 -->
-        <StackPanel Grid.Row="1" Margin="0,0,0,10">
-            <controls:StudioSliderRow x:Name="SliderR" LabelWidth="52" Title="R 红" Minimum="0" Maximum="255" Step="1" DefaultValue="255" ValueFormat="0" />
-            <controls:StudioSliderRow x:Name="SliderG" LabelWidth="52" Title="G 绿" Minimum="0" Maximum="255" Step="1" DefaultValue="255" ValueFormat="0" />
-            <controls:StudioSliderRow x:Name="SliderB" LabelWidth="52" Title="B 蓝" Minimum="0" Maximum="255" Step="1" DefaultValue="255" ValueFormat="0" />
-        </StackPanel>
-
-        <!-- 常用摄影影楼色板 -->
-        <TextBlock Grid.Row="2" Text="影楼常用快捷色卡" Foreground="{DynamicResource BrushTextSecondary}" FontSize="11" Margin="0,2,0,6" />
-        <WrapPanel Grid.Row="3" x:Name="QuickPalette" />
-
-        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="取消" Style="{StaticResource ModernButton}" Click="Cancel_Click" IsCancel="True" Width="74" Margin="0,0,8,0" />
-            <Button Content="应用颜色" Style="{StaticResource PrimaryButton}" Click="Ok_Click" IsDefault="True" Width="90" />
-        </StackPanel>
+        </DockPanel>
+        <Border Grid.Row="1" Style="{StaticResource DialogFooter}">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="取消" Style="{StaticResource DialogButton}" Click="Cancel_Click" IsCancel="True" />
+                <Button Content="确定" Style="{StaticResource DialogPrimaryButton}" Click="Ok_Click" IsDefault="True" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

@@ -23,6 +23,11 @@ public partial class CustomPolaroidDialog : Window
         BottomBox.Text = seed.MarginBottomMm.ToString("0.#", CultureInfo.InvariantCulture);
         RadiusBox.Text = seed.CornerRadiusMm.ToString("0.#", CultureInfo.InvariantCulture);
         NameBox.Text = $"{seed.Name.Split('(')[0].Trim()} 自定义框";
+        Loaded += (_, _) =>
+        {
+            NameBox.Focus();
+            NameBox.SelectAll();
+        };
         UpdateComputedPreview();
     }
 
@@ -31,18 +36,33 @@ public partial class CustomPolaroidDialog : Window
     private void UpdateComputedPreview()
     {
         if (ComputedPhotoWindowText == null) return;
-        if (TryReadValues(out double cw, out double ch, out double mt, out double ml, out double mr, out double mb, out _))
+        bool valid = false;
+        if (TryReadValues(out double cw, out double ch, out double mt, out double ml, out double mr, out double mb, out double cr))
         {
             double pw = cw - ml - mr;
             double ph = ch - mt - mb;
-            ComputedPhotoWindowText.Text = pw >= 10 && ph >= 10
-                ? $"内框有效画面区域：{pw:0.#} × {ph:0.#} mm"
-                : "警告：边框过大，内框画面尺寸不足 10 mm";
+            if (cw < 20 || ch < 20 || cw > 500 || ch > 500 || mt < 0 || ml < 0 || mr < 0 || mb < 0 || cr < 0)
+            {
+                ComputedPhotoWindowText.Text = "整卡尺寸需在 20–500 mm 之间，边框与圆角不能为负数";
+            }
+            else if (pw < 10 || ph < 10)
+            {
+                ComputedPhotoWindowText.Text = "边框过大：画面区域宽和高均需至少 10 mm";
+            }
+            else
+            {
+                valid = true;
+                ComputedPhotoWindowText.Text = $"画面区域：{pw:0.#} × {ph:0.#} mm";
+            }
         }
         else
         {
-            ComputedPhotoWindowText.Text = "请输入有效毫米数值";
+            ComputedPhotoWindowText.Text = "请输入有效的毫米数值";
         }
+
+        if (SaveButton != null) SaveButton.IsEnabled = valid;
+        ComputedPhotoWindowText.SetResourceReference(TextBlock.ForegroundProperty,
+            valid ? "BrushTextSecondary" : "BrushStatusError");
     }
 
     private bool TryReadValues(out double cw, out double ch, out double mt, out double ml, out double mr, out double mb, out double cr)
@@ -71,7 +91,7 @@ public partial class CustomPolaroidDialog : Window
         if (!TryReadValues(out double cw, out double ch, out double mt, out double ml, out double mr, out double mb, out double cr) ||
             cw < 20 || ch < 20 || cw > 500 || ch > 500 || mt < 0 || ml < 0 || mr < 0 || mb < 0 || cr < 0)
         {
-            MessageBox.Show(this, "请检查整卡及边框尺寸（20~500 mm，边框 >= 0 mm）。", "参数无效", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "整卡尺寸需在 20–500 mm 之间，边框不能为负数。", "自定义拍立得尺寸", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -79,7 +99,7 @@ public partial class CustomPolaroidDialog : Window
         double ph = Math.Round(ch - mt - mb, 2);
         if (pw < 10 || ph < 10)
         {
-            MessageBox.Show(this, "内框画面宽度和高度均需至少 10 mm。", "边框过大", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(this, "画面区域的宽和高都需至少 10 mm。", "自定义拍立得尺寸", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 

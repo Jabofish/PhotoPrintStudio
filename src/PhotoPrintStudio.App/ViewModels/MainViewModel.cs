@@ -86,6 +86,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private byte[]? _cachedIccBytes;
     private PhotoEditState? _copiedColorEdit;
     private ProjectSnapshot? _pendingUndoSnapshot;
+    private bool _continuousEditMutated;
+    private bool _hasUnsavedProjectChanges;
+    private int _workspaceRevision;
     private bool _suppressLayoutRebuild;
 
     // === 主题与全局状态 ===
@@ -103,14 +106,21 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _colorSubTabIndex = 0; // 0=基础光影色彩, 1=曲线与HSL, 2=裁剪细节与证件照
 
     // === 清晰编辑上下文与 Toast 反馈 ===
+    public string WindowTitle => string.IsNullOrWhiteSpace(_projectPath)
+        ? "光影印坊"
+        : $"{Path.GetFileNameWithoutExtension(_projectPath)}{(_hasUnsavedProjectChanges ? " *" : "")} - 光影印坊";
     [ObservableProperty] private string _activeEditTargetTitle = "尚未选择编辑对象";
-    [ObservableProperty] private string _activeEditTargetMeta = "请导入照片或点击下方“样例图”体验";
+    [ObservableProperty] private string _activeEditTargetMeta = "可从下方拖入照片";
     [ObservableProperty] private bool _isEditingUnassignedAsset;
     [ObservableProperty] private bool _canForkIndependentAsset;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAutoFramePhoto))]
+    [NotifyPropertyChangedFor(nameof(ShowCustomPresetPlaceholder))]
+    [NotifyPropertyChangedFor(nameof(CanPasteColorToSelected))]
     private bool _hasSelectedAsset;
     [ObservableProperty] private bool _hasSelectedSlot;
+    [ObservableProperty] private bool _hasSelectedSlotPhoto;
+    [ObservableProperty] private bool _hasPlacedPhotosOnActiveSheet;
     [ObservableProperty] private bool _hasPreflightIssues;
     [ObservableProperty] private string _activeToolBannerText = "";
     [ObservableProperty] private bool _hasActiveToolBanner;
@@ -138,11 +148,16 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanGoToPreviousPage))]
     [NotifyPropertyChangedFor(nameof(CanGoToNextPage))]
+    [NotifyPropertyChangedFor(nameof(CurrentPageNumber))]
     private int _activeSheetIndex;
     public bool HasMultiplePages => Sheets.Count > 1;
+    public int CurrentPageNumber => ActiveSheetIndex + 1;
     public bool CanGoToPreviousPage => HasMultiplePages && ActiveSheetIndex > 0;
     public bool CanGoToNextPage => ActiveSheetIndex < Sheets.Count - 1;
-    [ObservableProperty] private PrintSheet? _activeSheet;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCustomFreeformLayout))]
+    [NotifyPropertyChangedFor(nameof(CanEditAutoLayoutSliders))]
+    private PrintSheet? _activeSheet;
     [ObservableProperty] private LayoutSlot? _selectedSlot;
     [ObservableProperty] private AssetItemViewModel? _selectedAsset;
     [ObservableProperty] private HistogramData? _activeHistogram;
@@ -161,9 +176,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEditGridSize))]
     [NotifyPropertyChangedFor(nameof(IsAutomaticPolaroidLayout))]
+    [NotifyPropertyChangedFor(nameof(IsCustomFreeformLayout))]
+    [NotifyPropertyChangedFor(nameof(CanEditAutoLayoutSliders))]
     private LayoutTemplateDefinition? _selectedTemplate;
     public bool CanEditGridSize => SelectedTemplate?.TemplateKind is "free_grid" or "polaroid_fixed_grid";
     public bool IsAutomaticPolaroidLayout => SelectedTemplate?.TemplateKind == "polaroid_grid";
+    public bool IsCustomFreeformLayout => ActiveSheet?.IsCustomFreeform == true || SelectedTemplate?.IsCustomFreeform == true;
+    public bool CanEditAutoLayoutSliders => !IsCustomFreeformLayout;
 
     private readonly List<PaperSizeSpec> _customPaperSizes = [];
     private readonly List<PolaroidSpec> _customPolaroidSpecs = [];
@@ -304,7 +323,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _faceDetectionStatusText = "";
     [ObservableProperty] private bool _canUndo;
     [ObservableProperty] private bool _canRedo;
-    [ObservableProperty] private bool _hasCopiedColorEdit;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanPasteColorToSelected))]
+    [NotifyPropertyChangedFor(nameof(CanPasteColorToAll))]
+    private bool _hasCopiedColorEdit;
+
+    public bool CanPasteColorToSelected => HasCopiedColorEdit && HasSelectedAsset;
+    public bool CanPasteColorToAll => HasCopiedColorEdit && Assets.Count > 0;
     internal bool IsStartupCancelled { get; }
 
     static MainViewModel() => ExifAndColorHelper.TiffDecoder = SkiaWpfInterop.DecodeTiff;
@@ -366,11 +391,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         Logger.Info("光影印坊 Portable 启动完成");
 
+        Assets.CollectionChanged += (_, _) => OnPropertyChanged(nameof(CanPasteColorToAll));
         Sheets.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HasMultiplePages));
             OnPropertyChanged(nameof(CanGoToPreviousPage));
             OnPropertyChanged(nameof(CanGoToNextPage));
+            NotifyPolaroidSyncFlags();
         };
 
         _suppressLayoutRebuild = true;
@@ -667,11 +694,14 @@ public partial class MainViewModel : ObservableObject, IDisposable
         return choices;
     }
 
+    private long _printerCalibrationVersion;
+
     partial void OnSelectedPrinterNameChanged(string value)
     {
         if (string.IsNullOrWhiteSpace(value) || _suppressPrinterInspectOnSelect) return;
 
         var token = _disposeCts.Token;
+        long version = Interlocked.Increment(ref _printerCalibrationVersion);
         _ = Task.Run(() =>
         {
             try
@@ -679,16 +709,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 if (token.IsCancellationRequested) return;
                 bool hasSaved = DataStore.HasSavedPrinterProfile(value);
                 var profile = DataStore.LoadPrinterProfile(value);
-                if (!string.IsNullOrWhiteSpace(profile.SavedDevModeBase64))
-                    PrintService.LoadSavedDevModeBase64(value, profile.SavedDevModeBase64);
                 var info = PrintService.InspectPrinter(value);
                 if (token.IsCancellationRequested) return;
 
                 var dispatcher = Application.Current?.Dispatcher;
                 void Apply()
                 {
-                    if (token.IsCancellationRequested || !string.Equals(SelectedPrinterName, value, StringComparison.Ordinal))
+                    if (token.IsCancellationRequested ||
+                        !string.Equals(SelectedPrinterName, value, StringComparison.Ordinal) ||
+                        version != Interlocked.Read(ref _printerCalibrationVersion))
                         return;
+                    if (!string.IsNullOrWhiteSpace(profile.SavedDevModeBase64))
+                        PrintService.LoadSavedDevModeBase64(value, profile.SavedDevModeBase64);
                     ApplyPrinterHardwareInfoToUi(value, hasSaved, profile, info);
                     ScheduleRender();
                 }
@@ -915,15 +947,42 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public async Task ImportFilesAsync(IEnumerable<string> filePaths,
         Func<int, ImportArrangement?>? chooseArrangement = null, LayoutSlot? dropTarget = null)
     {
+        int workspaceRevision = _workspaceRevision;
         var validExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { ".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif" };
 
         var targets = new List<string>();
+        int skippedNonImages = 0;
+        var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var requested = filePaths.ToList();
-        foreach (var file in requested)
+        foreach (var entry in requested)
         {
-            if (File.Exists(file) && validExts.Contains(Path.GetExtension(file)))
-                targets.Add(file);
+            if (Directory.Exists(entry))
+            {
+                try
+                {
+                    foreach (var child in Directory.EnumerateFiles(entry)
+                                 .Where(f => validExts.Contains(Path.GetExtension(f)))
+                                 .OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase))
+                    {
+                        if (seenPaths.Add(child))
+                            targets.Add(child);
+                    }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    Logger.Error($"读取文件夹失败: {entry}", ex);
+                }
+            }
+            else if (File.Exists(entry) && validExts.Contains(Path.GetExtension(entry)))
+            {
+                if (seenPaths.Add(entry))
+                    targets.Add(entry);
+            }
+            else
+            {
+                skippedNonImages++;
+            }
         }
         if (targets.Count == 0)
         {
@@ -986,21 +1045,29 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
         }
 
-        var arrangement = chooseArrangement != null ? chooseArrangement(added.Count) :
+        var arrangement = workspaceRevision != _workspaceRevision ? null :
+            chooseArrangement != null ? chooseArrangement(added.Count) :
             new ImportArrangement(ActiveSheet?.Slots.All(s => string.IsNullOrEmpty(s.PhotoAssetId)) == true
                 ? ActiveSheet.Scenario == LayoutScenario.IdPhoto && added.Count == 1
                     ? ImportPlacement.OnePhotoPerPage : ImportPlacement.FillEmptySlots
                 : ImportPlacement.PoolOnly);
-        if (arrangement is not { } options)
+        if (arrangement is not { } options || workspaceRevision != _workspaceRevision)
         {
             foreach (var photo in added) ImageCache.RemoveAsset(photo.Id);
-            StatusText = "已取消导入";
+            if (workspaceRevision == _workspaceRevision) StatusText = "已取消导入";
             return;
         }
 
         var placement = options.Placement;
         int framingFailures = 0;
         List<PrintSheet>? preparedPages = null;
+        if (placement == ImportPlacement.SmartPaginate &&
+            (_batchFramingCancellation != null || _autoFrameCancellation != null || IsAiFramingBusy))
+        {
+            foreach (var photo in added) ImageCache.RemoveAsset(photo.Id);
+            ShowToast("正在进行另一批智能构图，请完成后再导入。");
+            return;
+        }
         if (placement == ImportPlacement.SmartPaginate && ActiveSheet is { Slots.Count: > 0 } prototype)
         {
             preparedPages = LayoutEngine.BuildPaginatedSheets(prototype, added.Select(item => item.Asset).ToList(),
@@ -1029,7 +1096,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
                             if (options.AutoRotate && PortraitAutoFrameHelper.NeedsQuarterTurnForSlotAspect(
                                 asset.PixelWidth, asset.PixelHeight, edit.QuarterTurns, w, h))
                                 edit.QuarterTurns = (edit.QuarterTurns + 1) % 4;
-                            ApplyContentFrame(asset, w, h, bleed, options.Fit ?? slot.FitModeOverride,
+                            ApplyContentFrame(asset, w, h, bleed, options.Fit ?? slot.EffectiveFitMode,
                                 slot.SlotZoom, slot.SlotPanX, slot.SlotPanY, framing.Token);
                         }
                         catch (Exception ex) when (ex is IOException or InvalidOperationException)
@@ -1050,6 +1117,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
             }
 
             if (token.IsCancellationRequested) return;
+            if (workspaceRevision != _workspaceRevision)
+            {
+                foreach (var photo in added) ImageCache.RemoveAsset(photo.Id);
+                return;
+            }
             if (framing.IsCancellationRequested || ActiveSheet != prototype)
             {
                 for (int i = 0; i < added.Count; i++) RestoreAutoFrame(added[i].Asset.EditState, originalCrops[i]);
@@ -1072,7 +1144,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (placement == ImportPlacement.PoolOnly && dropTarget != null &&
             ActiveSheet?.Slots.Contains(dropTarget) == true && added.Count == 1)
         {
-            dropTarget.PhotoAssetId = added[0].Id;
+            AssignSlotPhoto(dropTarget, added[0].Id);
             placed = 1;
         }
         else if (placement == ImportPlacement.FillEmptySlots && ActiveSheet is { } sheet)
@@ -1080,7 +1152,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             var emptySlots = sheet.Slots.Where(s => string.IsNullOrEmpty(s.PhotoAssetId));
             foreach (var slot in LayoutEngine.OrderSlots(emptySlots, options.Order).Take(added.Count))
             {
-                slot.PhotoAssetId = added[placed++].Id;
+                AssignSlotPhoto(slot, added[placed++].Id);
                 if (options.Fit.HasValue) slot.FitModeOverride = options.Fit;
             }
         }
@@ -1100,7 +1172,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
             UpdatePreflight();
             ScheduleRender();
         }
-        int failures = requested.Count - added.Count;
+        int failures = (targets.Count - added.Count) + skippedNonImages;
         string result = pages > 0 ? $"，排成 {pages} 页" : placed > 0 ? $"，已放入 {placed} 张" : "";
         if (added.Count > placed) result += $"，{added.Count - placed} 张待排版";
         if (placement == ImportPlacement.SmartPaginate && framingFailures > 0) result += $"，{framingFailures} 张保留原裁剪";
@@ -1111,9 +1183,113 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void PaginateSelectedPhotos(IReadOnlyList<AssetItemViewModel> photos, ImportArrangement? arrangement = null)
     {
         if (photos.Count == 0 || ActiveSheet is not { Slots.Count: > 0 }) return;
+        var options = arrangement ?? new ImportArrangement(ImportPlacement.Paginate);
+        if (options.Placement == ImportPlacement.FillEmptySlots)
+        {
+            FillEmptySlotsWithAssets(photos, options.Order, options.Fit);
+            return;
+        }
         PushUndoSnapshot();
-        int pages = AppendPhotoPages(photos, arrangement ?? new ImportArrangement(ImportPlacement.Paginate));
+        int pages = AppendPhotoPages(photos, options, orientSinglePhotoPages: true);
         ShowToast($"已将所选 {photos.Count} 张照片排成 {pages} 页。");
+    }
+
+    public async Task ArrangeSelectedPhotosAsync(IReadOnlyList<AssetItemViewModel> photos, ImportArrangement options)
+    {
+        if (photos.Count == 0 || ActiveSheet is not { Slots.Count: > 0 } prototype) return;
+        if (options.Placement != ImportPlacement.SmartPaginate)
+        {
+            PaginateSelectedPhotos(photos, options);
+            return;
+        }
+        if (_batchFramingCancellation != null || _autoFrameCancellation != null || IsAiFramingBusy)
+        {
+            ShowToast("正在进行智能构图，请完成后再排版。");
+            return;
+        }
+
+        var token = _disposeCts.Token;
+        var snapshots = photos.Select(item => item.Asset.CloneMetadataOnly()).ToList();
+        var originalCrops = snapshots.Select(asset => ReadCrop(asset.EditState)).ToArray();
+        var preparedPages = LayoutEngine.BuildPaginatedSheets(prototype, snapshots,
+            options.Order, options.Fit, orientSinglePhotoPages: true);
+        var placedSlots = preparedPages.SelectMany(page => page.Slots).Where(slot => slot.PhotoAssetId != null)
+            .ToLookup(slot => slot.PhotoAssetId!);
+        using var framing = CancellationTokenSource.CreateLinkedTokenSource(token);
+        _batchFramingCancellation = framing;
+        NotifyAutoFrameActionChanged();
+        StatusText = $"正在为所选 {photos.Count} 张照片智能构图…";
+        int framingFailures = 0;
+        try
+        {
+            framingFailures = await Task.Run(() =>
+            {
+                int failures = 0;
+                for (int i = 0; i < snapshots.Count; i++)
+                {
+                    framing.Token.ThrowIfCancellationRequested();
+                    var asset = snapshots[i];
+                    if (placedSlots[asset.Id].FirstOrDefault() is not { } slot) continue;
+                    var (w, h, bleed) = PortraitAutoFrameHelper.ResolveUprightSlotPhotoFrameMm(slot);
+                    var edit = asset.EditState;
+                    try
+                    {
+                        if (options.AutoRotate && PortraitAutoFrameHelper.NeedsQuarterTurnForSlotAspect(
+                            asset.PixelWidth, asset.PixelHeight, edit.QuarterTurns, w, h))
+                            edit.QuarterTurns = (edit.QuarterTurns + 1) % 4;
+                        ApplyContentFrame(asset, w, h, bleed, options.Fit ?? slot.EffectiveFitMode,
+                            slot.SlotZoom, slot.SlotPanX, slot.SlotPanY, framing.Token);
+                    }
+                    catch (Exception ex) when (ex is IOException or InvalidOperationException)
+                    {
+                        RestoreAutoFrame(edit, originalCrops[i]);
+                        failures++;
+                        Logger.Error($"无法为 {asset.DisplayName} 智能构图", ex);
+                    }
+                }
+                return failures;
+            }, framing.Token);
+        }
+        catch (OperationCanceledException) when (framing.IsCancellationRequested) { }
+        finally
+        {
+            _batchFramingCancellation = null;
+            NotifyAutoFrameActionChanged();
+        }
+
+        if (token.IsCancellationRequested) return;
+        if (framing.IsCancellationRequested || ActiveSheet != prototype ||
+            photos.Where((photo, i) => !Assets.Contains(photo) || ReadCrop(photo.Asset.EditState) != originalCrops[i]).Any())
+        {
+            ShowToast("已取消智能构图");
+            return;
+        }
+
+        PushUndoSnapshot();
+
+        for (int i = 0; i < photos.Count; i++)
+        {
+            var after = ReadCrop(snapshots[i].EditState);
+            if (after == originalCrops[i]) continue;
+
+            var item = photos[i];
+            var asset = item.Asset;
+            if (item.UsageCount > 0)
+            {
+                asset = asset.CloneMetadataOnly();
+                asset.Id = Guid.NewGuid().ToString("N");
+                asset.DisplayName = $"{item.DisplayName}（构图副本）";
+                Assets.Add(new AssetItemViewModel(asset, item.Thumbnail));
+                foreach (var slot in placedSlots[item.Id])
+                    slot.PhotoAssetId = asset.Id;
+            }
+            RestoreAutoFrame(asset.EditState, after);
+            _appliedAutoFrames[asset.Id] = (originalCrops[i], after);
+        }
+
+        int pages = AppendPhotoPages(photos, options, preparedPages, orientSinglePhotoPages: true);
+        string extra = framingFailures > 0 ? $"（{framingFailures} 张保留原裁剪）" : "";
+        ShowToast($"已智能排版所选 {photos.Count} 张照片为 {pages} 页{extra}。");
     }
 
     private int AppendPhotoPages(IReadOnlyList<AssetItemViewModel> photos, ImportArrangement options,
@@ -1127,8 +1303,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 var page = prototype.Clone();
                 foreach (var slot in page.Slots)
                 {
+                    ClearSlotPlacement(slot);
                     slot.PhotoAssetId = asset.Id;
-                    if (options.Fit.HasValue) slot.FitModeOverride = options.Fit;
+                    slot.FitModeOverride = options.Fit;
                 }
                 return page;
             }).ToList()
@@ -1165,6 +1342,20 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
 
         HasSelectedAsset = SelectedAsset != null;
+        if (!HasSelectedAsset)
+        {
+            ActiveHistogram = null;
+            ClippingWarningText = "";
+            DetectedFaceSummaryText = "";
+            EstimatedIdHeadInfo = "";
+            if (ViewMode != CanvasViewMode.SheetOverview || IsTwoPointStraightenActive || IsHoldingCompare)
+            {
+                ViewMode = CanvasViewMode.SheetOverview;
+                IsTwoPointStraightenActive = false;
+                IsHoldingCompare = false;
+                UpdateToolBanner();
+            }
+        }
         NotifyAutoFrameActionChanged();
         NotifyAllEditPropertiesChanged();
         UpdateActiveTargetContext();
@@ -1206,6 +1397,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void UpdateActiveTargetContext()
     {
+        HasPlacedPhotosOnActiveSheet = HasPlacedPhotos(ActiveSheet);
+        HasSelectedSlotPhoto = SelectedSlot != null && !string.IsNullOrEmpty(SelectedSlot.PhotoAssetId);
+        OnPropertyChanged(nameof(CanEditNonPolaroidCaption));
+        OnPropertyChanged(nameof(SelectedSlotCaption));
+
         if (SelectedSlot != null && !string.IsNullOrEmpty(SelectedSlot.PhotoAssetId))
         {
             var assetVm = Assets.FirstOrDefault(a => a.Id == SelectedSlot.PhotoAssetId);
@@ -1213,13 +1409,17 @@ public partial class MainViewModel : ObservableObject, IDisposable
             {
                 if (SelectedAsset != null && SelectedAsset.Id != assetVm.Id)
                 {
-                    ActiveEditTargetTitle = $"预调素材: {SelectedAsset.DisplayName}";
-                    ActiveEditTargetMeta = $"{SelectedAsset.ResolutionText}，未放入当前格位 #{SelectedSlot.Index + 1}";
+                    CanForkIndependentAsset = false;
+                    ActiveEditTargetTitle = $"正在编辑：{SelectedAsset.DisplayName}";
+                    int? otherPage = GetFirstPlacedPageNumber(SelectedAsset.Id);
+                    ActiveEditTargetMeta = otherPage is { } pageNum
+                        ? $"已排在第 {pageNum} 页（当前第 {SelectedSlot.Index + 1} 格为其他照片）"
+                        : $"未放入第 {SelectedSlot.Index + 1} 格";
                     IsEditingUnassignedAsset = true;
                     return;
                 }
 
-                bool rotated = Math.Abs(Math.Abs(SelectedSlot.SlotRotationDegrees) - 90.0) < 1.0;
+                bool rotated = SelectedSlot.IsQuarterTurnRotated;
                 double targetW = SelectedSlot.PolaroidStyle != null
                     ? Math.Max(1, SelectedSlot.WidthMm - (rotated
                         ? SelectedSlot.PolaroidStyle.MarginTopMm + SelectedSlot.PolaroidStyle.MarginBottomMm
@@ -1238,13 +1438,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
                 double zoom = Math.Clamp(assetVm.Asset.EditState.Zoom * SelectedSlot.SlotZoom, 0.5, 8.0);
                 double dpiW = (srcW / zoom) / (targetW / UnitConverter.MmPerInch);
                 double dpiH = (srcH / zoom) / (targetH / UnitConverter.MmPerInch);
-                double effDpi = (SelectedSlot.FitModeOverride ?? assetVm.Asset.EditState.FitMode) == FitMode.Cover
+                double effDpi = (SelectedSlot.EffectiveFitMode ?? assetVm.Asset.EditState.FitMode) == FitMode.Cover
                     ? Math.Min(dpiW, dpiH) : Math.Max(dpiW, dpiH);
-                string dpiBadge = effDpi >= 300 ? $"{effDpi:0} DPI 极清" : (effDpi >= 220 ? $"{effDpi:0} DPI 合格" : $"{effDpi:0} DPI 偏低");
-                string syncHint = assetVm.UsageCount > 1 ? $"，同步 {assetVm.UsageCount} 格" : "";
+                string dpiBadge = effDpi < 220 ? $"{effDpi:0} DPI（偏低）" : $"{effDpi:0} DPI";
+                string syncHint = assetVm.UsageCount > 1 ? $"，此图用于 {assetVm.UsageCount} 格" : "";
 
-                ActiveEditTargetTitle = $"格位 #{SelectedSlot.Index + 1}：{assetVm.DisplayName}";
-                ActiveEditTargetMeta = $"{SelectedSlot.WidthMm:0.#}×{SelectedSlot.HeightMm:0.#}mm，{dpiBadge}{syncHint}";
+                ActiveEditTargetTitle = $"第 {SelectedSlot.Index + 1} 格：{assetVm.DisplayName}";
+                ActiveEditTargetMeta = $"{SelectedSlot.WidthMm:0.#}×{SelectedSlot.HeightMm:0.#} mm，{dpiBadge}{syncHint}";
                 IsEditingUnassignedAsset = false;
                 CanForkIndependentAsset = assetVm.UsageCount > 1;
                 return;
@@ -1255,16 +1455,18 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
         if (SelectedSlot != null)
         {
-            ActiveEditTargetTitle = $"格位 #{SelectedSlot.Index + 1}（空置）";
+            ActiveEditTargetTitle = $"第 {SelectedSlot.Index + 1} 格（空）";
             ActiveEditTargetMeta = SelectedAsset != null
-                ? $"待放置素材: {SelectedAsset.DisplayName}"
-                : "从下方胶片条拖入照片或点击导入";
+                ? (GetFirstPlacedPageNumber(SelectedAsset.Id) is { } pageNum
+                    ? $"所选照片：{SelectedAsset.DisplayName}（已排在第 {pageNum} 页）"
+                    : $"所选照片：{SelectedAsset.DisplayName}")
+                : (Assets.Count == 0 ? "拖入照片，或双击空白格位导入" : "可从下方拖入或双击照片放入");
             IsEditingUnassignedAsset = SelectedAsset != null;
             return;
         }
 
-        ActiveEditTargetTitle = SelectedAsset != null ? $"素材: {SelectedAsset.DisplayName}" : "工作区就绪";
-        ActiveEditTargetMeta = SelectedAsset != null ? SelectedAsset.ResolutionText : "导入照片后点击模板即可开始排版";
+        ActiveEditTargetTitle = SelectedAsset != null ? $"素材：{SelectedAsset.DisplayName}" : "未选择照片";
+        ActiveEditTargetMeta = SelectedAsset != null ? SelectedAsset.ResolutionText : "";
         IsEditingUnassignedAsset = SelectedAsset != null;
     }
 
@@ -1282,7 +1484,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
         else if (ViewMode == CanvasViewMode.SingleRetouchCrop)
         {
-            ActiveToolBannerText = "单图裁剪精修模式：画布内按住拖动调整构图，滚轮调整裁剪缩放，按 F6 返回总览";
+            ActiveToolBannerText = "单图裁剪：拖动平移构图，滚轮缩放，双击或按 Esc 返回总览";
             HasActiveToolBanner = true;
         }
         else if (ViewMode == CanvasViewMode.SplitCompare)
@@ -1297,14 +1499,152 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    private static void AssignSlotPhoto(LayoutSlot slot, string assetId)
+    {
+        if (!string.Equals(slot.PhotoAssetId, assetId, StringComparison.Ordinal))
+        {
+            slot.FitModeOverride = null;
+            slot.SlotZoom = 1.0;
+            slot.SlotPanX = 0.0;
+            slot.SlotPanY = 0.0;
+        }
+        slot.PhotoAssetId = assetId;
+    }
+
     public void AssignAssetToSlot(AssetItemViewModel assetVm, LayoutSlot slot)
     {
         PushUndoSnapshot();
-        slot.PhotoAssetId = assetVm.Id;
+        AssignSlotPhoto(slot, assetVm.Id);
         UpdateAssetUsageCounts();
         SelectSlot(slot);
         UpdatePreflight();
         ScheduleRender();
+    }
+
+    public bool QuickPlaceAsset(AssetItemViewModel assetVm)
+    {
+        if (ActiveSheet is not { Slots.Count: > 0 } sheet)
+        {
+            SelectAsset(assetVm);
+            return false;
+        }
+
+        LayoutSlot? target = null;
+        if (SelectedSlot != null && sheet.Slots.Contains(SelectedSlot) && string.IsNullOrEmpty(SelectedSlot.PhotoAssetId))
+        {
+            target = SelectedSlot;
+        }
+        else if (sheet.Slots.OrderBy(s => s.Index).FirstOrDefault(s => string.IsNullOrEmpty(s.PhotoAssetId)) is { } emptySlot)
+        {
+            target = emptySlot;
+        }
+        else if (SelectedSlot != null && sheet.Slots.Contains(SelectedSlot))
+        {
+            target = SelectedSlot;
+        }
+        else
+        {
+            target = sheet.Slots.OrderBy(s => s.Index).First();
+        }
+
+        if (target.PhotoAssetId == assetVm.Id) return false;
+        AssignAssetToSlot(assetVm, target);
+        ShowToast($"已将 {assetVm.DisplayName} 放入第 {target.Index + 1} 格");
+        return true;
+    }
+
+    public int AssignAssetsStartingAtSlot(IReadOnlyList<AssetItemViewModel> photos, LayoutSlot? startSlot)
+    {
+        if (ActiveSheet is not { Slots.Count: > 0 } sheet || photos.Count == 0) return 0;
+        var ordered = sheet.Slots.OrderBy(s => s.Index).ToList();
+        int startIdx = startSlot != null ? ordered.IndexOf(startSlot) : -1;
+        if (startIdx < 0)
+        {
+            startIdx = ordered.FindIndex(s => string.IsNullOrEmpty(s.PhotoAssetId));
+            if (startIdx < 0)
+            {
+                ShowToast("请将照片拖放到具体格位上进行替换");
+                return 0;
+            }
+        }
+
+        int count = Math.Min(photos.Count, ordered.Count - startIdx);
+        if (count <= 0) return 0;
+
+        PushUndoSnapshot();
+        for (int i = 0; i < count; i++)
+            AssignSlotPhoto(ordered[startIdx + i], photos[i].Id);
+
+        UpdateAssetUsageCounts();
+        SelectSlot(ordered[startIdx]);
+        UpdatePreflight();
+        ScheduleRender();
+
+        if (count == 1)
+            ShowToast($"已将 {photos[0].DisplayName} 放入第 {ordered[startIdx].Index + 1} 格");
+        else if (count < photos.Count)
+            ShowToast($"已放入 {count} 张照片（第 {ordered[startIdx].Index + 1}–{ordered[startIdx + count - 1].Index + 1} 格，本页剩余格位已满）");
+        else
+            ShowToast($"已将 {count} 张照片放入第 {ordered[startIdx].Index + 1}–{ordered[startIdx + count - 1].Index + 1} 格");
+        return count;
+    }
+
+    public int FillEmptySlotsWithAssets(IReadOnlyList<AssetItemViewModel> photos,
+        SlotFillOrder order = SlotFillOrder.Template, FitMode? fit = null)
+    {
+        if (ActiveSheet is not { Slots.Count: > 0 } sheet || photos.Count == 0) return 0;
+        var emptySlots = LayoutEngine.OrderSlots(sheet.Slots.Where(s => string.IsNullOrEmpty(s.PhotoAssetId)), order).ToList();
+        if (emptySlots.Count == 0)
+        {
+            ShowToast("当前页已没有空余格位");
+            return 0;
+        }
+
+        int placed = Math.Min(emptySlots.Count, photos.Count);
+        PushUndoSnapshot();
+        for (int i = 0; i < placed; i++)
+        {
+            AssignSlotPhoto(emptySlots[i], photos[i].Id);
+            if (fit.HasValue) emptySlots[i].FitModeOverride = fit;
+        }
+        UpdateAssetUsageCounts();
+        SelectSlot(emptySlots[0]);
+        UpdatePreflight();
+        ScheduleRender();
+
+        int remaining = photos.Count - placed;
+        ShowToast(remaining > 0
+            ? $"已填入本页 {placed} 个空位，其余 {remaining} 张保留在素材池"
+            : $"已将 {placed} 张照片填入本页空位");
+        return placed;
+    }
+
+    public bool SwapOrMoveSlot(LayoutSlot source, LayoutSlot target)
+    {
+        if (ActiveSheet == null || ReferenceEquals(source, target)) return false;
+        if (!ActiveSheet.Slots.Contains(source) || !ActiveSheet.Slots.Contains(target)) return false;
+        if (string.IsNullOrEmpty(source.PhotoAssetId)) return false;
+
+        bool isSwap = !string.IsNullOrEmpty(target.PhotoAssetId);
+        PushUndoSnapshot();
+        (source.PhotoAssetId, target.PhotoAssetId) = (target.PhotoAssetId, source.PhotoAssetId);
+        (source.FitModeOverride, target.FitModeOverride) = (target.FitModeOverride, source.FitModeOverride);
+        (source.SlotZoom, target.SlotZoom) = (target.SlotZoom, source.SlotZoom);
+        (source.SlotPanX, target.SlotPanX) = (target.SlotPanX, source.SlotPanX);
+        (source.SlotPanY, target.SlotPanY) = (target.SlotPanY, source.SlotPanY);
+        (source.CustomCaption, target.CustomCaption) = (target.CustomCaption, source.CustomCaption);
+        if (source.PolaroidStyle != null && target.PolaroidStyle != null)
+            (source.PolaroidStyle.CaptionTemplate, target.PolaroidStyle.CaptionTemplate) =
+                (target.PolaroidStyle.CaptionTemplate, source.PolaroidStyle.CaptionTemplate);
+
+        UpdateAssetUsageCounts();
+        SelectSlot(target);
+        UpdatePreflight();
+        ScheduleRender();
+        ShowToast(isSwap
+            ? $"已互换第 {source.Index + 1} 格与第 {target.Index + 1} 格的照片，可撤销"
+            : $"已将第 {source.Index + 1} 格照片移至第 {target.Index + 1} 格，可撤销");
+        return true;
     }
 
     [RelayCommand]
@@ -1318,7 +1658,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         if (ActiveSheet == null) return;
         PushUndoSnapshot();
         foreach (var s in ActiveSheet.Slots)
-            s.PhotoAssetId = assetVm.Id;
+            AssignSlotPhoto(s, assetVm.Id);
         UpdateAssetUsageCounts();
         SelectSlot(ActiveSheet.Slots.FirstOrDefault());
         UpdatePreflight();
@@ -1328,13 +1668,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void SequentialFillAllAssets() => SequentialFillCurrentSheet(Assets);
 
-    private void SequentialFillCurrentSheet(IReadOnlyList<AssetItemViewModel> pool)
+    public void SequentialFillCurrentSheet(IReadOnlyList<AssetItemViewModel> pool)
     {
         if (ActiveSheet == null || pool.Count == 0) return;
         PushUndoSnapshot();
         for (int i = 0; i < ActiveSheet.Slots.Count; i++)
         {
-            ActiveSheet.Slots[i].PhotoAssetId = pool[i % pool.Count].Id;
+            AssignSlotPhoto(ActiveSheet.Slots[i], pool[i % pool.Count].Id);
         }
         UpdateAssetUsageCounts();
         SelectSlot(ActiveSheet.Slots.FirstOrDefault());
@@ -1342,15 +1682,98 @@ public partial class MainViewModel : ObservableObject, IDisposable
         ScheduleRender();
     }
 
+    internal static void ClearSlotPlacement(LayoutSlot slot)
+    {
+        slot.PhotoAssetId = null;
+        slot.FitModeOverride = null;
+        slot.SlotZoom = 1.0;
+        slot.SlotPanX = 0.0;
+        slot.SlotPanY = 0.0;
+    }
+
     [RelayCommand]
     private void ClearSelectedSlot()
     {
-        if (SelectedSlot == null) return;
+        if (SelectedSlot == null || string.IsNullOrEmpty(SelectedSlot.PhotoAssetId)) return;
+        int slotNum = SelectedSlot.Index + 1;
         PushUndoSnapshot();
-        SelectedSlot.PhotoAssetId = null;
+        ClearSlotPlacement(SelectedSlot);
+        if (ViewMode != CanvasViewMode.SheetOverview)
+        {
+            ViewMode = CanvasViewMode.SheetOverview;
+            IsTwoPointStraightenActive = false;
+            UpdateToolBanner();
+        }
         UpdateAssetUsageCounts();
+        UpdateActiveTargetContext();
         UpdatePreflight();
         ScheduleRender();
+        ShowToast($"已清空第 {slotNum} 格，可撤销");
+    }
+
+    [RelayCommand]
+    private void ClearActiveSheetSlots()
+    {
+        if (ActiveSheet == null) return;
+        int cleared = ClearSheetsSlots([ActiveSheet]);
+        if (cleared > 0)
+            ShowToast($"已清空本页 {cleared} 个格位（照片仍保留在素材池，可撤销）");
+    }
+
+    public int RemoveUnplacedPhotos()
+    {
+        var unplaced = Assets.Where(a => a.UsageCount == 0).ToList();
+        if (unplaced.Count == 0) return 0;
+        RemovePhotos(unplaced);
+        ShowToast($"已移除 {unplaced.Count} 张未排版照片，可撤销");
+        return unplaced.Count;
+    }
+
+    public int? GetFirstPlacedPageNumber(string assetId)
+    {
+        for (int i = 0; i < Sheets.Count; i++)
+        {
+            if (Sheets[i].Slots.Any(s => s.PhotoAssetId == assetId))
+                return i + 1;
+        }
+        return null;
+    }
+
+    public bool LocateAssetOnPages(AssetItemViewModel asset)
+    {
+        var occurrences = new List<(int SheetIndex, LayoutSlot Slot)>();
+        for (int i = 0; i < Sheets.Count; i++)
+        {
+            foreach (var slot in Sheets[i].Slots.OrderBy(s => s.Index))
+            {
+                if (slot.PhotoAssetId == asset.Id)
+                    occurrences.Add((i, slot));
+            }
+        }
+        if (occurrences.Count == 0) return false;
+
+        int currentIdx = occurrences.FindIndex(o =>
+            o.SheetIndex == ActiveSheetIndex && ReferenceEquals(o.Slot, SelectedSlot));
+        var next = occurrences[(currentIdx + 1) % occurrences.Count];
+
+        if (next.SheetIndex != ActiveSheetIndex)
+            SwitchToSheet(next.SheetIndex);
+        SelectSlot(next.Slot);
+        if (ViewMode != CanvasViewMode.SheetOverview)
+            SetViewMode(CanvasViewMode.SheetOverview);
+        ShowToast($"已定位到第 {next.SheetIndex + 1} 页 第 {next.Slot.Index + 1} 格");
+        return true;
+    }
+
+    public void RevealAssetInExplorer(AssetItemViewModel? asset)
+    {
+        if (asset == null || string.IsNullOrWhiteSpace(asset.Asset.FilePath)) return;
+        if (!File.Exists(asset.Asset.FilePath))
+        {
+            ShowToast("原图文件已移动或不存在");
+            return;
+        }
+        Dialogs.RevealFileInShell(asset.Asset.FilePath);
     }
 
     public void RemovePhotos(IReadOnlyList<AssetItemViewModel> photos)
@@ -1360,7 +1783,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         var ids = photos.Select(p => p.Id).ToHashSet();
         foreach (var slot in Sheets.SelectMany(s => s.Slots))
         {
-            if (slot.PhotoAssetId is { } id && ids.Contains(id)) slot.PhotoAssetId = null;
+            if (slot.PhotoAssetId is { } id && ids.Contains(id)) ClearSlotPlacement(slot);
         }
         foreach (var photo in photos)
         {
@@ -1375,8 +1798,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _appliedAutoFrames.Remove(photo.Id);
             _latestHistograms.Remove(photo.Id);
         }
-        SelectAsset(Assets.FirstOrDefault());
         UpdateAssetUsageCounts();
+        SelectAsset(Assets.FirstOrDefault());
         UpdatePreflight();
         ScheduleRender();
     }
@@ -1391,21 +1814,52 @@ public partial class MainViewModel : ObservableObject, IDisposable
         foreach (var a in Assets)
             a.UsageCount = counts.TryGetValue(a.Id, out int c) ? c : 0;
         UnplacedPhotoCount = Assets.Count(a => a.UsageCount == 0);
+        HasPlacedPhotosOnActiveSheet = HasPlacedPhotos(ActiveSheet);
     }
 
     // === 撤销 / 重做 ===
+    internal void MarkContinuousEditMutated()
+    {
+        if (_pendingUndoSnapshot != null)
+            _continuousEditMutated = true;
+        MarkWorkspaceDirty();
+    }
+
+    internal void MarkWorkspaceDirty()
+    {
+        if (string.IsNullOrWhiteSpace(_projectPath) || _hasUnsavedProjectChanges) return;
+        _hasUnsavedProjectChanges = true;
+        OnPropertyChanged(nameof(WindowTitle));
+    }
+
+    internal void ClearWorkspaceDirty()
+    {
+        if (!_hasUnsavedProjectChanges) return;
+        _hasUnsavedProjectChanges = false;
+        OnPropertyChanged(nameof(WindowTitle));
+    }
+
     public void BeginContinuousEdit()
     {
-        _pendingUndoSnapshot ??= CaptureSnapshot();
+        if (_pendingUndoSnapshot == null)
+        {
+            _pendingUndoSnapshot = CaptureSnapshot();
+            _continuousEditMutated = false;
+        }
     }
 
     public void EndContinuousEdit()
     {
         if (_pendingUndoSnapshot != null)
         {
-            _undoStack.PushUndo(_pendingUndoSnapshot);
+            if (_continuousEditMutated)
+            {
+                _undoStack.PushUndo(_pendingUndoSnapshot);
+                SyncUndoRedoFlags();
+                MarkWorkspaceDirty();
+            }
             _pendingUndoSnapshot = null;
-            SyncUndoRedoFlags();
+            _continuousEditMutated = false;
         }
     }
 
@@ -1413,23 +1867,38 @@ public partial class MainViewModel : ObservableObject, IDisposable
     {
         _undoStack.PushUndo(CaptureSnapshot());
         SyncUndoRedoFlags();
+        MarkWorkspaceDirty();
     }
 
     [RelayCommand]
     private void Undo()
     {
+        EndContinuousEdit();
         var current = CaptureSnapshot();
         var prev = _undoStack.Undo(current);
-        if (prev != null) RestoreSnapshot(prev);
+        if (prev != null)
+        {
+            RestoreSnapshot(prev);
+            if (_projectPath != null && HasUnsavedWork()) MarkWorkspaceDirty();
+            else ClearWorkspaceDirty();
+            StatusText = "已撤销";
+        }
         SyncUndoRedoFlags();
     }
 
     [RelayCommand]
     private void Redo()
     {
+        EndContinuousEdit();
         var current = CaptureSnapshot();
         var next = _undoStack.Redo(current);
-        if (next != null) RestoreSnapshot(next);
+        if (next != null)
+        {
+            RestoreSnapshot(next);
+            if (_projectPath != null && HasUnsavedWork()) MarkWorkspaceDirty();
+            else ClearWorkspaceDirty();
+            StatusText = "已重做";
+        }
         SyncUndoRedoFlags();
     }
 
@@ -1469,16 +1938,30 @@ public partial class MainViewModel : ObservableObject, IDisposable
             ActiveSheetIndex = Math.Clamp(snap.ActiveSheetIndex, 0, Math.Max(0, Sheets.Count - 1));
             ActiveSheet = Sheets.ElementAtOrDefault(ActiveSheetIndex);
             UpdateAssetUsageCounts();
+            NotifyPolaroidSyncFlags();
 
             var slot = ActiveSheet?.Slots.FirstOrDefault(s => s.Id == snap.SelectedSlotId)
                        ?? ActiveSheet?.Slots.FirstOrDefault();
             SelectSlot(slot);
 
-            var asset = Assets.FirstOrDefault(a => a.Id == snap.SelectedAssetId) ?? Assets.FirstOrDefault();
-            SelectAsset(asset);
+            var asset = (snap.SelectedAssetId != null ? Assets.FirstOrDefault(a => a.Id == snap.SelectedAssetId) : null)
+                        ?? (slot?.PhotoAssetId != null ? Assets.FirstOrDefault(a => a.Id == slot.PhotoAssetId) : null)
+                        ?? Assets.FirstOrDefault();
+            if (!ReferenceEquals(SelectedAsset, asset))
+                SelectAsset(asset);
 
+            if (ViewMode != CanvasViewMode.SheetOverview && !HasPlacedPhotos(ActiveSheet) && SelectedAsset == null)
+            {
+                ViewMode = CanvasViewMode.SheetOverview;
+                IsTwoPointStraightenActive = false;
+                UpdateToolBanner();
+            }
+
+            NotifyAllEditPropertiesChanged();
+            UpdateActiveTargetContext();
             PreviewCache.ClearProcessedAndSplitCaches();
             UpdatePreflight();
+            PagePreviewsInvalidated?.Invoke();
             ScheduleRender();
             if (missingThumbItems.Count > 0) _ = LoadWorkspaceThumbnailsAsync(missingThumbItems);
         }
@@ -1616,6 +2099,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     public void LoadProjectIntoWorkspace(PrintProject project)
     {
+        _workspaceRevision++;
+        _autoFrameCancellation?.Cancel();
+        _batchFramingCancellation?.Cancel();
         if (IsHotFolderWatching) StopHotFolderWatch();
         _workspaceThumbnailCts?.Cancel();
         var loadedAssets = project.Assets.Where(a => File.Exists(a.FilePath))

@@ -60,6 +60,12 @@ public sealed class PolaroidSlotStyle
         MarginBottomMm = spec.MarginBottomMm
     };
 
+    public bool HasPhotoArea(double widthMm, double heightMm, bool rotated)
+    {
+        if (rotated) (widthMm, heightMm) = (heightMm, widthMm);
+        return widthMm > MarginLeftMm + MarginRightMm && heightMm > MarginTopMm + MarginBottomMm;
+    }
+
     public PolaroidSlotStyle Clone() => new()
     {
         PolaroidSpecId = PolaroidSpecId,
@@ -88,16 +94,33 @@ public sealed class LayoutSlot
     public double HeightMm { get; set; }
     public double BleedMm { get; set; }
     public double CornerRadiusMm { get; set; }
-    public double SlotRotationDegrees { get; set; } // 0 or 90
+    public double SlotRotationDegrees { get; set; } // 0, 90, 180, 270
     public string Label { get; set; } = "";
     public string? PhotoAssetId { get; set; }
     public string? CustomCaption { get; set; }
     public string? IdPhotoSpecId { get; set; }
     public PolaroidSlotStyle? PolaroidStyle { get; set; }
     public FitMode? FitModeOverride { get; set; }
+    public FitMode? TemplateFitMode { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public FitMode? EffectiveFitMode => FitModeOverride ?? TemplateFitMode;
+
     public double SlotZoom { get; set; } = 1.0;
     public double SlotPanX { get; set; }
     public double SlotPanY { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsQuarterTurnRotated => IsQuarterTurnRotation(SlotRotationDegrees);
+
+    public static bool IsQuarterTurnRotation(double degrees)
+    {
+        double norm = ((degrees % 360.0) + 360.0) % 360.0;
+        return Math.Abs(norm - 90.0) < 1.0 || Math.Abs(norm - 270.0) < 1.0;
+    }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool HasValidPhotoArea => PolaroidStyle?.HasPhotoArea(WidthMm, HeightMm, IsQuarterTurnRotated) ?? true;
 
     public LayoutSlot Clone() => new()
     {
@@ -116,6 +139,7 @@ public sealed class LayoutSlot
         IdPhotoSpecId = IdPhotoSpecId,
         PolaroidStyle = PolaroidStyle?.Clone(),
         FitModeOverride = FitModeOverride,
+        TemplateFitMode = TemplateFitMode,
         SlotZoom = SlotZoom,
         SlotPanX = SlotPanX,
         SlotPanY = SlotPanY
@@ -132,6 +156,7 @@ public sealed class PrintSheet
     public bool IsLandscape { get; set; } = true;
     public LayoutScenario Scenario { get; set; } = LayoutScenario.IdPhoto;
     public string TemplateId { get; set; } = "";
+    public bool IsCustomFreeform { get; set; }
     public CropMarkStyle CropMarkStyle { get; set; } = CropMarkStyle.OuterCornerTicks;
     public string CropMarkColorHex { get; set; } = "#888888";
     public double CropMarkThicknessMm { get; set; } = 0.15;
@@ -153,6 +178,7 @@ public sealed class PrintSheet
         IsLandscape = IsLandscape,
         Scenario = Scenario,
         TemplateId = TemplateId,
+        IsCustomFreeform = IsCustomFreeform,
         CropMarkStyle = CropMarkStyle,
         CropMarkColorHex = CropMarkColorHex,
         CropMarkThicknessMm = CropMarkThicknessMm,
@@ -170,8 +196,58 @@ public sealed record SheetLayoutSettings(
     double MarginMm, double GapMm, double BleedMm, double CornerRadiusMm,
     int Rows, int Columns, string? IdSpecId, string? PolaroidSpecId, bool PolaroidSafeFit);
 
+public sealed class CustomSlotDefinition
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public double XMm { get; set; }
+    public double YMm { get; set; }
+    public double WidthMm { get; set; } = 60.0;
+    public double HeightMm { get; set; } = 90.0;
+    public double BleedMm { get; set; }
+    public double CornerRadiusMm { get; set; }
+    public double SlotRotationDegrees { get; set; } // 0, 90, 180, 270
+    public string Label { get; set; } = "";
+    public FitMode? FitModeOverride { get; set; }
+    public string? IdPhotoSpecId { get; set; }
+    public PolaroidSlotStyle? PolaroidStyle { get; set; }
+
+    public CustomSlotDefinition Clone(bool preserveId = true) => new()
+    {
+        Id = preserveId ? Id : Guid.NewGuid().ToString("N"),
+        XMm = XMm,
+        YMm = YMm,
+        WidthMm = WidthMm,
+        HeightMm = HeightMm,
+        BleedMm = BleedMm,
+        CornerRadiusMm = CornerRadiusMm,
+        SlotRotationDegrees = SlotRotationDegrees,
+        Label = Label,
+        FitModeOverride = FitModeOverride,
+        IdPhotoSpecId = IdPhotoSpecId,
+        PolaroidStyle = PolaroidStyle?.Clone()
+    };
+
+    public static CustomSlotDefinition FromLayoutSlot(LayoutSlot slot) => new()
+    {
+        Id = string.IsNullOrWhiteSpace(slot.Id) ? Guid.NewGuid().ToString("N") : slot.Id,
+        XMm = Math.Round(slot.XMm, 3),
+        YMm = Math.Round(slot.YMm, 3),
+        WidthMm = Math.Round(slot.WidthMm, 3),
+        HeightMm = Math.Round(slot.HeightMm, 3),
+        BleedMm = Math.Round(slot.BleedMm, 3),
+        CornerRadiusMm = Math.Round(slot.CornerRadiusMm, 3),
+        SlotRotationDegrees = ((Math.Round(slot.SlotRotationDegrees / 90.0) * 90.0) % 360.0 + 360.0) % 360.0,
+        Label = slot.Label,
+        FitModeOverride = slot.TemplateFitMode,
+        IdPhotoSpecId = slot.IdPhotoSpecId,
+        PolaroidStyle = slot.PolaroidStyle?.Clone()
+    };
+}
+
 public sealed class LayoutTemplateDefinition
 {
+    public const string KindCustomFreeform = "custom_freeform";
+
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     public string Subtitle { get; set; } = "";
@@ -191,14 +267,92 @@ public sealed class LayoutTemplateDefinition
     public double CustomCornerRadiusMm { get; set; } = 0;
     public bool PolaroidSafeFit { get; set; } = false;
     public bool IsBuiltIn { get; set; } = true;
-    public string TemplateKind { get; set; } = "auto_grid"; // auto_grid, id_mixed_1_2, id_mixed_split, six_2in1_full, six_2in1_border, six_2in1_vert, six_2in1_card_duplex, six_2in1_compare, polaroid_grid, free_grid
+    public string TemplateKind { get; set; } = "auto_grid"; // auto_grid, id_mixed_1_2, id_mixed_split, six_2in1_full, six_2in1_border, six_2in1_left, six_2in1_vert, six_2in1_card_duplex, polaroid_grid, free_grid, custom_freeform
+    public double? CustomPaperWidthMm { get; set; }
+    public double? CustomPaperHeightMm { get; set; }
+    public string? CustomCanvasBackgroundHex { get; set; }
+    public List<CustomSlotDefinition>? CustomSlots { get; set; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsCustomFreeform => string.Equals(TemplateKind, KindCustomFreeform, StringComparison.OrdinalIgnoreCase);
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool ShowCenterFoldTickByDefault => DefaultCropMarkStyle == CropMarkStyle.CenterFoldTicks ||
+        (!IsCustomFreeform && Scenario == LayoutScenario.SixInchTwoInOne && TemplateKind != "six_2in1_left");
+
+    public LayoutTemplateDefinition Clone() => new()
+    {
+        Id = Id,
+        Name = Name,
+        Subtitle = Subtitle,
+        Scenario = Scenario,
+        DefaultPaperId = DefaultPaperId,
+        DefaultLandscape = DefaultLandscape,
+        DefaultMarginMm = DefaultMarginMm,
+        DefaultGapMm = DefaultGapMm,
+        DefaultBleedMm = DefaultBleedMm,
+        DefaultCropMarkStyle = DefaultCropMarkStyle,
+        IdPhotoSpecId = IdPhotoSpecId,
+        PolaroidSpecId = PolaroidSpecId,
+        CustomRows = CustomRows,
+        CustomCols = CustomCols,
+        CustomItemWidthMm = CustomItemWidthMm,
+        CustomItemHeightMm = CustomItemHeightMm,
+        CustomCornerRadiusMm = CustomCornerRadiusMm,
+        PolaroidSafeFit = PolaroidSafeFit,
+        IsBuiltIn = IsBuiltIn,
+        TemplateKind = TemplateKind,
+        CustomPaperWidthMm = CustomPaperWidthMm,
+        CustomPaperHeightMm = CustomPaperHeightMm,
+        CustomCanvasBackgroundHex = CustomCanvasBackgroundHex,
+        CustomSlots = CustomSlots?.Select(s => s.Clone()).ToList()
+    };
 
     public override string ToString() => Name;
 }
 
+public sealed record PrinterGeometryCalibration(double OffsetX = 0, double OffsetY = 0,
+    double ScaleX = 100, double ScaleY = 100, double Overscan = 100, double DuplexX = 0, double DuplexY = 0,
+    bool HasMeasuredScale = false);
+
 public sealed class PrinterCalibrationProfile
 {
-    public PrinterCalibrationProfile Clone() => (PrinterCalibrationProfile)MemberwiseClone();
+    public PrinterCalibrationProfile Clone()
+    {
+        var copy = (PrinterCalibrationProfile)MemberwiseClone();
+        copy.GeometryByOutput = new(GeometryByOutput);
+        return copy;
+    }
+
+    public Dictionary<string, PrinterGeometryCalibration> GeometryByOutput { get; set; } = [];
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? GeometryTarget { get; set; }
+
+    public PrinterGeometryCalibration CaptureGeometry() => new(OffsetXMm, OffsetYMm,
+        ScaleXPercent, ScaleYPercent, OverscanCompensationPercent, DuplexBackOffsetXMm, DuplexBackOffsetYMm);
+
+    public PrinterCalibrationProfile ForOutput(string key)
+    {
+        var result = Clone();
+        var geometry = GeometryByOutput.GetValueOrDefault(key) ?? new PrinterGeometryCalibration();
+        result.OffsetXMm = geometry.OffsetX;
+        result.OffsetYMm = geometry.OffsetY;
+        result.ScaleXPercent = geometry.ScaleX;
+        result.ScaleYPercent = geometry.ScaleY;
+        result.OverscanCompensationPercent = geometry.Overscan;
+        result.DuplexBackOffsetXMm = geometry.DuplexX;
+        result.DuplexBackOffsetYMm = geometry.DuplexY;
+        result.GeometryTarget = key;
+        return result;
+    }
+
+    public (double ScaleX, double ScaleY, double OffsetX, double OffsetY) GetGeometryTransform(bool backSide = false)
+    {
+        double overscan = Math.Clamp(OverscanCompensationPercent / 100.0, 0.85, 1.15);
+        return (ScaleXPercent / 100.0 * overscan, ScaleYPercent / 100.0 * overscan,
+            OffsetXMm + (backSide ? DuplexBackOffsetXMm : 0), OffsetYMm + (backSide ? DuplexBackOffsetYMm : 0));
+    }
     public string PrinterName { get; set; } = "默认打印机";
     public string PrinterKey { get; set; } = "default";
     public double OffsetXMm { get; set; } = 0.0;
@@ -267,7 +421,7 @@ public sealed class AppPortableConfig
 
 public sealed class PrintProject
 {
-    public string Version { get; set; } = "2.0";
+    public string Version { get; set; } = "2.1";
     public string ProjectName { get; set; } = "未命名冲印工程";
     public DateTime SavedAt { get; set; } = DateTime.Now;
     public List<PhotoAsset> Assets { get; set; } = [];

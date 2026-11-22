@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using PhotoPrintStudio.Core.Imaging;
 using PhotoPrintStudio.Core.Models;
+using PhotoPrintStudio.Core.Layout;
 using SkiaSharp;
 
 namespace PhotoPrintStudio.Core.Rendering;
@@ -83,7 +84,7 @@ public static class ExportService
                     HeightMm = spec.HeightMm,
                     PhotoAssetId = asset.Id,
                     IdPhotoSpecId = spec.Id,
-                    FitModeOverride = sourceSlot == null ? FitMode.Cover : sourceSlot.FitModeOverride,
+                    FitModeOverride = sourceSlot == null ? FitMode.Cover : sourceSlot.EffectiveFitMode,
                     SlotZoom = sourceSlot?.SlotZoom ?? 1.0,
                     SlotPanX = sourceSlot?.SlotPanX ?? 0.0,
                     SlotPanY = sourceSlot?.SlotPanY ?? 0.0,
@@ -185,6 +186,7 @@ public static class ExportService
         double outputSharpeningAmount = 0.0)
     {
         if (sheets.Count == 0) throw new ArgumentException("没有可导出的排版页。", nameof(sheets));
+        foreach (var sheet in sheets) FreeformLayoutMath.ValidateOutput(sheet);
 
         var metadata = new SKDocumentPdfMetadata
         {
@@ -270,6 +272,7 @@ public static class ExportService
         bool embedIccProfile = true)
     {
         if (sheets.Count == 0) throw new ArgumentException("没有可导出的排版页。", nameof(sheets));
+        foreach (var sheet in sheets) FreeformLayoutMath.ValidateOutput(sheet);
         Directory.CreateDirectory(outputDirectory);
 
         string safeBase = string.Concat((string.IsNullOrWhiteSpace(baseFileName) ? "排版输出" : baseFileName.Trim())

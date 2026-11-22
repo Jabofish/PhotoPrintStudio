@@ -11,15 +11,15 @@ public partial class ColorPickerDialog : Window
     private static readonly (string Name, string Hex)[] StudioSwatches =
     [
         ("纯白", "#FFFFFF"),
-        ("公安蓝", "#438EDB"),
+        ("证件蓝", "#438EDB"),
         ("深海蓝", "#1E4E8C"),
         ("天青蓝", "#8CC4F2"),
         ("证件红", "#D9001B"),
         ("朱砂红", "#B91C1C"),
-        ("高级灰", "#CBD5E1"),
-        ("深岩灰", "#475569"),
+        ("浅灰", "#CBD5E1"),
+        ("深灰", "#475569"),
         ("暖米白", "#FAF6EE"),
-        ("奶茶卡", "#F3EBDD"),
+        ("奶茶", "#F3EBDD"),
         ("樱花粉", "#F6E6E8"),
         ("暗夜黑", "#181A20")
     ];
@@ -57,14 +57,12 @@ public partial class ColorPickerDialog : Window
             var c = TryParseColor(hex) ?? Colors.White;
             var btn = new Button
             {
-                Width = 24,
-                Height = 24,
                 Margin = new Thickness(0, 0, 6, 6),
                 Background = new SolidColorBrush(c),
-                ToolTip = $"{name} ({hex})",
-                BorderThickness = new Thickness(1)
+                ToolTip = $"{name} ({hex})"
             };
-            btn.SetResourceReference(BorderBrushProperty, "BrushBorderStrong");
+            btn.SetResourceReference(StyleProperty, "SwatchButton");
+            System.Windows.Automation.AutomationProperties.SetName(btn, name);
             btn.Click += (_, _) => ApplyColorToControls(c);
             QuickPalette.Children.Add(btn);
         }
@@ -114,6 +112,8 @@ public partial class ColorPickerDialog : Window
         if (string.IsNullOrWhiteSpace(text)) return null;
         string s = text.Trim();
         if (!s.StartsWith('#')) s = "#" + s;
+        if (s.Length == 4)
+            s = $"#{s[1]}{s[1]}{s[2]}{s[2]}{s[3]}{s[3]}";
         if (s.Length != 7) return null;
         try { return (Color)ColorConverter.ConvertFromString(s); }
         catch { return null; }

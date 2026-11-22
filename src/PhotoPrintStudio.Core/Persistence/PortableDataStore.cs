@@ -8,7 +8,7 @@ namespace PhotoPrintStudio.Core.Persistence;
 
 public sealed class PortableDataStore : IWorkspaceStore
 {
-    public const string CurrentProjectSchemaVersion = "2.0";
+    public const string CurrentProjectSchemaVersion = "2.1";
 
     private readonly PortablePaths _paths;
     private readonly AppLogger _logger;
@@ -248,6 +248,7 @@ public sealed class PortableDataStore : IWorkspaceStore
             ?? throw new InvalidDataException("无效的工程文件格式。");
 
         ValidateAndMigrateProjectSchema(project, filePath);
+        MigrateRetiredComparisonTemplate(project);
 
         string projDir = Path.GetDirectoryName(Path.GetFullPath(filePath))!;
         foreach (var asset in project.Assets)
@@ -266,6 +267,37 @@ public sealed class PortableDataStore : IWorkspaceStore
             }
         }
         return project;
+    }
+
+    private static void MigrateRetiredComparisonTemplate(PrintProject project)
+    {
+        foreach (var sheet in project.Sheets)
+        {
+            if (sheet.TemplateId == "tpl_6in_2in1_compare")
+            {
+                sheet.TemplateId = "tpl_6in_2in1_border";
+                if (sheet.Slots is [var left, var right])
+                {
+                    sheet.LayoutSettings ??= new(left.XMm, Math.Round(right.XMm - left.XMm - left.WidthMm, 3),
+                        left.BleedMm, left.CornerRadiusMm, 2, 2, null, null, false);
+                }
+                foreach (var slot in sheet.Slots)
+                {
+                    slot.Label = $"二合一 #{slot.Index + 1}";
+                    if (slot.CustomCaption is "BEFORE" or "AFTER")
+                        slot.CustomCaption = null;
+                }
+            }
+            else if (project.Version == "2.0" && sheet.TemplateId == "tpl_6in_2in1_left" &&
+                     sheet.Slots is [var first, var second] &&
+                     (first.CustomCaption, second.CustomCaption) is ("BEFORE", "AFTER") or ("AFTER", "BEFORE"))
+            {
+                first.CustomCaption = second.CustomCaption = null;
+            }
+        }
+
+        if (project.Version == "2.0")
+            project.Version = CurrentProjectSchemaVersion;
     }
 
     private void ValidateAndMigrateProjectSchema(PrintProject project, string filePath)

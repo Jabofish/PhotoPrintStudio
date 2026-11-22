@@ -18,6 +18,8 @@
             <helpers:IntEqualsConverter x:Key="IntEquals" />
             <helpers:IntEqualsToVisibilityConverter x:Key="IntEqualsToVis" />
             <helpers:HexToBrushConverter x:Key="HexToBrush" />
+            <helpers:TemplateListTextConverter x:Key="TemplateListText" />
+            <helpers:CanvasToolbarLabelVisibilityConverter x:Key="CanvasToolbarLabelVisibility" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -76,7 +76,6 @@ public partial class StudioSliderRow : UserControl
         ValueBadge.Text = text;
 
         bool isModified = Math.Abs(v - DefaultValue) > 0.005;
-        BadgeBorder.SetResourceReference(Border.BorderBrushProperty, isModified ? "BrushAccent" : "BrushBorderSubtle");
         ValueBadge.SetResourceReference(TextBlock.ForegroundProperty, isModified ? "BrushAccent" : "BrushTextPrimary");
     }
 
@@ -208,6 +207,12 @@ public partial class StudioSliderRow : UserControl
     private void BadgeEditor_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
         => EndBadgeEdit(commit: true);
 
+    internal void CommitPendingValue()
+    {
+        EndBadgeEdit(commit: true);
+        PartSlider.Focus();
+    }
+
     private void PartSlider_MouseDoubleClick(object sender, MouseButtonEventArgs e) => ResetToDefault();
 
     private void ResetToDefault()
@@ -228,7 +233,19 @@ public partial class StudioSliderRow : UserControl
         }
     }
 
-    private void PartSlider_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private void PartSlider_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+    {
+        if (_isDragging) e.Handled = true;
+    }
+
+    private void PartSlider_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => EndMouseEdit();
+
+    private void PartSlider_LostMouseCapture(object sender, MouseEventArgs e)
+    {
+        if (!PartSlider.IsMouseCaptureWithin) EndMouseEdit();
+    }
+
+    private void EndMouseEdit()
     {
         if (_isDragging)
         {

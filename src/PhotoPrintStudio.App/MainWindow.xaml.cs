@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,13 +23,20 @@ public partial class MainWindow : Window
     private CanvasViewMode _viewBeforeCompare;
     private Point _assetDragStart;
     private AssetItemViewModel? _assetDragCandidate;
+    private bool _deferAssetMultiSelectReset;
     private bool _selectingFromAssetList;
     private bool _importInProgress;
     private GridLength? _expandedAssetTrayHeight;
     private bool _isPanningSingle;
     private (PrintSheet Sheet, LayoutSlot Slot, string AssetId)? _overviewDrag;
+    private (PrintSheet Sheet, LayoutSlot SourceSlot)? _slotSwapDrag;
+    private LayoutSlot? _slotSwapTarget;
     private bool _isPanningOverview;
     private bool _isDraggingSplit;
+    private bool _isMiddlePanningCanvas;
+    private Point _middlePanStart;
+    private double _middlePanStartH;
+    private double _middlePanStartV;
     private bool _syncingAssetSelection;
     private Point _lastMousePos;
     private Point? _firstHorizonPoint;
@@ -102,8 +109,12 @@ public partial class MainWindow : Window
             _pagePreviewTimer.Stop();
             _pagePreviewCancellation?.Cancel();
         }
-        if (e.PropertyName == nameof(MainViewModel.ViewMode) && _vm.ViewMode != CanvasViewMode.SplitCompare)
-            _viewBeforeCompare = _vm.ViewMode;
+        if (e.PropertyName == nameof(MainViewModel.ViewMode))
+        {
+            if (_vm.ViewMode != CanvasViewMode.SplitCompare)
+                _viewBeforeCompare = _vm.ViewMode;
+            _manualZoom = 1.0;
+        }
 
         if ((e.PropertyName == nameof(MainViewModel.IsTwoPointStraightenActive) && !_vm.IsTwoPointStraightenActive) ||
             e.PropertyName is nameof(MainViewModel.ActiveSheet) or nameof(MainViewModel.SelectedAsset))
@@ -263,34 +274,37 @@ public partial class MainWindow : Window
     {
         var menu = new ContextMenu();
 
-        var importItem = new MenuItem { Header = "导入本地照片... (Ctrl+O)" };
+        var importItem = new MenuItem { Header = "导入照片…", InputGestureText = "Ctrl+O" };
         importItem.Click += ImportPhotos_Click;
 
-        var sampleItem = new MenuItem { Header = "载入内置高分辨率测试样片" };
+        var hotFolderItem = new MenuItem { Header = "联机拍摄监视…" };
+        hotFolderItem.Click += (_, _) => new HotFolderWatchDialog(_vm) { Owner = this }.ShowDialog();
+
+        var sampleItem = new MenuItem { Header = "载入示例照片" };
         sampleItem.Click += (_, _) => _vm.LoadSamplePhotosCommand.Execute(null);
 
-        var openProjItem = new MenuItem { Header = "打开排版工程 (.ppsproj)...", InputGestureText = "Ctrl+Shift+O" };
+        var newProjItem = new MenuItem { Header = "新建空白工程", InputGestureText = "Ctrl+N", Command = _vm.NewProjectCommand };
+
+        var openProjItem = new MenuItem { Header = "打开排版工程…", InputGestureText = "Ctrl+Shift+O" };
         openProjItem.Click += (_, _) => _vm.OpenProjectCommand.Execute(null);
 
-        var saveProjItem = new MenuItem { Header = "保存当前工作 (Ctrl+S)" };
+        var saveProjItem = new MenuItem { Header = "保存", InputGestureText = "Ctrl+S" };
         saveProjItem.Click += (_, _) => _vm.SaveProjectCommand.Execute(null);
 
-        var openDataItem = new MenuItem { Header = "打开便携数据目录 (portable_data)" };
+        var openDataItem = new MenuItem { Header = "打开数据目录" };
         openDataItem.Click += (_, _) => _vm.OpenPortableDataFolderCommand.Execute(null);
 
-        var helpItem = new MenuItem { Header = "快捷键与使用说明 (F1)" };
+        var helpItem = new MenuItem { Header = "键盘快捷键", InputGestureText = "F1" };
         helpItem.Click += (_, _) => ShowShortcutsHelp();
-
-        var hotFolderItem = new MenuItem { Header = "联机拍摄热文件夹监视…" };
-        hotFolderItem.Click += (_, _) => new HotFolderWatchDialog(_vm) { Owner = this }.ShowDialog();
 
         menu.Items.Add(importItem);
         menu.Items.Add(hotFolderItem);
         menu.Items.Add(sampleItem);
         menu.Items.Add(new Separator());
+        menu.Items.Add(newProjItem);
         menu.Items.Add(openProjItem);
         menu.Items.Add(saveProjItem);
-        menu.Items.Add(new MenuItem { Header = "另存为…", Command = _vm.SaveProjectAsCommand });
+        menu.Items.Add(new MenuItem { Header = "另存为…", InputGestureText = "Ctrl+Shift+S", Command = _vm.SaveProjectAsCommand });
         menu.Items.Add(new MenuItem { Header = "打包工程与原图…", Command = _vm.PackProjectCommand });
         menu.Items.Add(new Separator());
         menu.Items.Add(openDataItem);
@@ -318,21 +332,39 @@ public partial class MainWindow : Window
     private void JumpToTemplateGroup_Click(object sender, RoutedEventArgs e)
     {
         var scenario = (LayoutScenario)((Button)sender).Tag;
-        if (_vm.FilteredTemplates.FirstOrDefault(t => t.Scenario == scenario) is { } template)
-            TemplatesList.ScrollIntoView(template);
+        var group = _vm.FilteredTemplates.Where(t => t.Scenario == scenario).ToList();
+        if (group.Count == 0) return;
+
+        TemplatesList.ScrollIntoView(group[0]);
+        TemplatesList.UpdateLayout();
+        if (FindVisualChild<ScrollViewer>(TemplatesList) is { } sv &&
+            FindVisualChild<ScrollContentPresenter>(sv) is { } presenter &&
+            TemplatesList.ItemContainerGenerator.ContainerFromItem(group[0]) is FrameworkElement firstItem)
+        {
+            // Scroll the group header (when grouped) or the first item cleanly to the top of the list viewport.
+            var anchor = FindFocusAncestor<GroupItem>(firstItem) as FrameworkElement ?? firstItem;
+            double offsetY = anchor.TranslatePoint(new Point(0, 0), presenter).Y;
+            sv.ScrollToVerticalOffset(Math.Clamp(sv.VerticalOffset + offsetY, 0, sv.ScrollableHeight));
+        }
     }
 
     private async void ImportPhotos_Click(object sender, RoutedEventArgs e)
     {
+        await PromptAndImportPhotosAsync();
+    }
+
+    private async Task PromptAndImportPhotosAsync(LayoutSlot? targetSlot = null)
+    {
+        if (_importInProgress) return;
         var dlg = new OpenFileDialog
         {
             Multiselect = true,
-            Title = "选择要导入打印的照片",
+            Title = targetSlot != null ? $"选择放入第 {targetSlot.Index + 1} 格的照片" : "选择要导入打印的照片",
             Filter = "图像文件 (*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff)|*.jpg;*.jpeg;*.png;*.bmp;*.webp;*.tif;*.tiff|所有文件 (*.*)|*.*"
         };
         if (dlg.ShowDialog() == true)
         {
-            await ImportPhotosAsync(dlg.FileNames);
+            await ImportPhotosAsync(dlg.FileNames, targetSlot);
         }
     }
 
@@ -340,39 +372,92 @@ public partial class MainWindow : Window
 
     private void QuickExportMenu_Click(object sender, RoutedEventArgs e)
     {
-        _vm.RightTabIndex = 2;
         var menu = new ContextMenu();
-        var jpgItem = new MenuItem { Header = $"导出当前页为高清 JPG ({_vm.ExportDpi} DPI)" };
+        var jpgItem = new MenuItem { Header = $"当前页 JPG（{_vm.ExportDpi} DPI）…", InputGestureText = "Ctrl+E" };
         jpgItem.Click += (_, _) => _vm.ExportCurrentJpegCommand.Execute(null);
-        var pngItem = new MenuItem { Header = $"导出当前页为无损 PNG ({_vm.ExportDpi} DPI)" };
+        var pngItem = new MenuItem { Header = $"当前页 PNG（{_vm.ExportDpi} DPI）…" };
         pngItem.Click += (_, _) => _vm.ExportCurrentPngCommand.Execute(null);
-        var pdfItem = new MenuItem { Header = $"导出全部页为多页 PDF ({_vm.Sheets.Count} 页)" };
-        pdfItem.Click += (_, _) => _vm.ExportAllToPdfCommand.Execute(null);
         menu.Items.Add(jpgItem);
         menu.Items.Add(pngItem);
+
+        if (_vm.HasMultiplePages)
+        {
+            menu.Items.Add(new Separator());
+            var batchJpg = new MenuItem { Header = $"批量导出全部 JPG（{_vm.Sheets.Count} 页）…" };
+            batchJpg.Click += (_, _) => _vm.ExportBatchJpegCommand.Execute(null);
+            var batchPng = new MenuItem { Header = $"批量导出全部 PNG（{_vm.Sheets.Count} 页）…" };
+            batchPng.Click += (_, _) => _vm.ExportBatchPngCommand.Execute(null);
+            menu.Items.Add(batchJpg);
+            menu.Items.Add(batchPng);
+        }
+
         menu.Items.Add(new Separator());
+        var pdfItem = new MenuItem { Header = $"全部页 PDF（{_vm.Sheets.Count} 页）…" };
+        pdfItem.Click += (_, _) => _vm.ExportAllToPdfCommand.Execute(null);
         menu.Items.Add(pdfItem);
+
+        if (_vm.ActiveScenario == LayoutScenario.IdPhoto && _vm.HasSelectedAsset)
+        {
+            menu.Items.Add(new Separator());
+            var digitalId = new MenuItem { Header = "单张电子证件照 JPG…" };
+            digitalId.Click += (_, _) => _vm.ExportDigitalIdPhotoCommand.Execute(null);
+            menu.Items.Add(digitalId);
+        }
+
         menu.PlacementTarget = sender as UIElement;
         menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         menu.IsOpen = true;
     }
 
-    private void OpenCalibrationDialog_Click(object sender, RoutedEventArgs e)
+    private async void OpenCalibrationDialog_Click(object sender, RoutedEventArgs e)
     {
-        if (!_vm.InstalledPrinters.Contains(_vm.SelectedPrinterName) ||
+        if (_vm.ActiveSheet is not { } sheet || !_vm.InstalledPrinters.Contains(_vm.SelectedPrinterName) ||
             !string.Equals(_vm.CurrentCalibration.PrinterName, _vm.SelectedPrinterName, StringComparison.OrdinalIgnoreCase))
         {
             _vm.ShowToast("请先选择打印机，等待设备设置载入。");
             return;
         }
-        var dlg = new CalibrationDialog(_vm) { Owner = this };
-        dlg.ShowDialog();
+        string printer = _vm.SelectedPrinterName;
+        int dpi = _vm.PrintDpi;
+        var page = sheet.Clone();
+        var profile = _vm.CurrentCalibration.Clone();
+        var button = (Button)sender;
+        button.IsEnabled = false;
+        try
+        {
+            var key = await Task.Run(() => _vm.PrintService.GetGeometryCalibrationKey(page, printer, profile, dpi));
+            if (!ReferenceEquals(sheet, _vm.ActiveSheet) || printer != _vm.SelectedPrinterName || dpi != _vm.PrintDpi)
+                return;
+            var dlg = new CalibrationDialog(_vm, key == null ? profile : profile.ForOutput(key)) { Owner = this };
+            dlg.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            _vm.Dialogs.ShowError($"无法打开打印校准：{ex.Message}", "打印校准");
+        }
+        finally { button.IsEnabled = true; }
     }
 
     private void OpenCustomTemplateDialog_Click(object sender, RoutedEventArgs e)
     {
-        var dlg = new CustomTemplateDialog(_vm) { Owner = this };
-        dlg.ShowDialog();
+        var existing = _vm.SelectedTemplate is { IsCustomFreeform: true } tpl ? tpl : null;
+        OpenCustomLayoutEditor(existing, editCurrentPage: _vm.IsCustomFreeformLayout);
+    }
+
+    private void EditTemplate_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.Tag is not LayoutTemplateDefinition tpl || tpl.IsBuiltIn) return;
+        OpenCustomLayoutEditor(tpl);
+    }
+
+    private void OpenCustomLayoutEditor(LayoutTemplateDefinition? existingTemplate, bool editCurrentPage = false)
+    {
+        var dlg = new CustomLayoutEditorWindow(_vm, existingTemplate, editCurrentPage) { Owner = this };
+        if (dlg.ShowDialog() == true && dlg.ResultTemplate != null)
+        {
+            bool saveToStore = dlg.ApplyMode is CustomLayoutApplyMode.SaveAndApply or CustomLayoutApplyMode.SaveAsNewTemplate;
+            _vm.ApplyCustomFreeformTemplate(dlg.ResultTemplate, saveToStore);
+        }
     }
 
     private void AddCustomPaper_Click(object sender, RoutedEventArgs e)
@@ -444,6 +529,11 @@ public partial class MainWindow : Window
     private void RenameTemplate_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement fe || fe.Tag is not LayoutTemplateDefinition tpl || tpl.IsBuiltIn) return;
+        RenameCustomTemplate(tpl);
+    }
+
+    private void RenameCustomTemplate(LayoutTemplateDefinition tpl)
+    {
         var dlg = new PromptInputDialog("重命名自定义模板", "输入新的模板名称：", tpl.Name, _vm.IsDarkTheme)
         {
             Owner = this
@@ -464,6 +554,20 @@ public partial class MainWindow : Window
 
     private void RefreshPrinters_Click(object sender, RoutedEventArgs e) => _vm.RefreshPrinters(_vm.SelectedPrinterName);
 
+    private void PrintCopies_Commit(object sender, RoutedEventArgs e)
+    {
+        if (e is KeyEventArgs key)
+        {
+            if (key.Key != Key.Enter) return;
+            key.Handled = true;
+        }
+
+        var input = (TextBox)sender;
+        if (int.TryParse(input.Text, out int copies))
+            _vm.PrintCopies = copies;
+        input.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
+    }
+
     private void OpenPrinterPreferences_Click(object sender, RoutedEventArgs e)
     {
         var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
@@ -474,6 +578,8 @@ public partial class MainWindow : Window
     {
         new SettingsDialog(_vm) { Owner = this }.ShowDialog();
     }
+
+    private void ShortcutsHelp_Click(object sender, RoutedEventArgs e) => ShowShortcutsHelp();
 
     private void HotFolderWatch_Click(object sender, RoutedEventArgs e)
     {
@@ -538,23 +644,34 @@ public partial class MainWindow : Window
     private void HoldCompareBtn_Up(object sender, MouseButtonEventArgs e) => _vm.IsHoldingCompare = false;
     private void HoldCompareBtn_Leave(object sender, MouseEventArgs e) => _vm.IsHoldingCompare = false;
 
-    private void ZoomIn_Click(object sender, RoutedEventArgs e)
+    private void SetManualZoom(double nextZoom)
     {
-        _manualZoom = Math.Clamp(_manualZoom * 1.2, 0.35, 4.0);
+        double clamped = Math.Clamp(nextZoom, 0.35, 4.0);
+        if (Math.Abs(clamped - _manualZoom) < 0.001) return;
+
+        double relCenterX = CanvasScroller.ExtentWidth > 1
+            ? (CanvasScroller.HorizontalOffset + CanvasScroller.ViewportWidth * 0.5) / CanvasScroller.ExtentWidth
+            : 0.5;
+        double relCenterY = CanvasScroller.ExtentHeight > 1
+            ? (CanvasScroller.VerticalOffset + CanvasScroller.ViewportHeight * 0.5) / CanvasScroller.ExtentHeight
+            : 0.5;
+
+        _manualZoom = clamped;
         UpdateViewportLayoutAndRulers();
+
+        if (_manualZoom > 1.01)
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                CanvasScroller.ScrollToHorizontalOffset(Math.Max(0, relCenterX * CanvasScroller.ExtentWidth - CanvasScroller.ViewportWidth * 0.5));
+                CanvasScroller.ScrollToVerticalOffset(Math.Max(0, relCenterY * CanvasScroller.ExtentHeight - CanvasScroller.ViewportHeight * 0.5));
+            }, System.Windows.Threading.DispatcherPriority.Loaded);
+        }
     }
 
-    private void ZoomOut_Click(object sender, RoutedEventArgs e)
-    {
-        _manualZoom = Math.Clamp(_manualZoom / 1.2, 0.35, 4.0);
-        UpdateViewportLayoutAndRulers();
-    }
-
-    private void ZoomFit_Click(object sender, RoutedEventArgs e)
-    {
-        _manualZoom = 1.0;
-        UpdateViewportLayoutAndRulers();
-    }
+    private void ZoomIn_Click(object sender, RoutedEventArgs e) => SetManualZoom(_manualZoom * 1.2);
+    private void ZoomOut_Click(object sender, RoutedEventArgs e) => SetManualZoom(_manualZoom / 1.2);
+    private void ZoomFit_Click(object sender, RoutedEventArgs e) => SetManualZoom(1.0);
 
     private void ViewportHost_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateViewportLayoutAndRulers();
     private void CanvasScroller_ScrollChanged(object sender, ScrollChangedEventArgs e) => UpdateViewportLayoutAndRulers();
@@ -584,8 +701,7 @@ public partial class MainWindow : Window
         }
         else if (Keyboard.Modifiers == ModifierKeys.Control || _vm.ViewMode == CanvasViewMode.SheetOverview)
         {
-            _manualZoom = Math.Clamp(_manualZoom * (e.Delta > 0 ? 1.12 : 1 / 1.12), 0.35, 4.0);
-            UpdateViewportLayoutAndRulers();
+            SetManualZoom(_manualZoom * (e.Delta > 0 ? 1.12 : 1 / 1.12));
             e.Handled = true;
         }
     }
@@ -597,6 +713,7 @@ public partial class MainWindow : Window
         int count = AssetsList.SelectedItems.Count;
         SelectedPhotosButton.Content = $"已选 {count} 张";
         SelectedPhotosButton.IsEnabled = count > 0;
+        SelectedPhotosButton.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
         if (_syncingAssetSelection) return;
         var asset = e.AddedItems.OfType<AssetItemViewModel>().LastOrDefault()
             ?? AssetsList.SelectedItem as AssetItemViewModel;
@@ -631,35 +748,233 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void ShowMenu(object sender, params MenuItem[] items)
+    private void ShowMenu(object sender, params object[] items)
     {
-        var menu = new ContextMenu { PlacementTarget = (UIElement)sender,
-            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
+        var menu = new ContextMenu
+        {
+            PlacementTarget = (UIElement)sender,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom
+        };
         foreach (var item in items)
             menu.Items.Add(item);
         menu.IsOpen = true;
     }
 
-    private void SelectedPhotos_Click(object sender, RoutedEventArgs e)
+    private List<AssetItemViewModel> GetSelectedAssetsInTrayOrder()
     {
         var selected = AssetsList.SelectedItems.Cast<AssetItemViewModel>().ToHashSet();
-        var photos = _vm.Assets.Where(selected.Contains).ToList();
+        return _vm.Assets.Where(selected.Contains).ToList();
+    }
+
+    private void PopulateAssetSelectionMenu(ItemsControl menu, IReadOnlyList<AssetItemViewModel> photos)
+    {
         if (photos.Count == 0) return;
-        var arrange = new MenuItem { Header = "按当前版式排入新页", IsEnabled = _vm.ActiveSheet?.Slots.Count > 0 };
+        bool hasSlots = _vm.ActiveSheet?.Slots.Count > 0;
+        bool hasEmptySlots = _vm.ActiveSheet?.Slots.Any(s => string.IsNullOrEmpty(s.PhotoAssetId)) == true;
+
+        if (photos.Count == 1)
+        {
+            var photo = photos[0];
+            var putSlot = new MenuItem
+            {
+                Header = _vm.SelectedSlot != null ? $"放入第 {_vm.SelectedSlot.Index + 1} 格" : "放入当前格位",
+                IsEnabled = hasSlots
+            };
+            putSlot.Click += (_, _) =>
+            {
+                var slot = _vm.SelectedSlot ?? _vm.ActiveSheet?.Slots.FirstOrDefault();
+                if (slot != null)
+                {
+                    _vm.AssignAssetToSlot(photo, slot);
+                    _vm.ShowToast($"已将 {photo.DisplayName} 放入第 {slot.Index + 1} 格");
+                }
+            };
+            menu.Items.Add(putSlot);
+
+            if (_vm.ActiveSheet?.Slots.Count > 1)
+            {
+                var fillAll = new MenuItem { Header = "用此照片填满本页" };
+                fillAll.Click += (_, _) => _vm.FillAllSlotsWithAsset(photo);
+                menu.Items.Add(fillAll);
+            }
+
+            if (photo.UsageCount > 0)
+            {
+                int? firstPage = _vm.GetFirstPlacedPageNumber(photo.Id);
+                var locate = new MenuItem
+                {
+                    Header = firstPage is { } pg ? $"定位到所在页面（第 {pg} 页）" : "定位到所在页面"
+                };
+                locate.Click += (_, _) => _vm.LocateAssetOnPages(photo);
+                menu.Items.Add(locate);
+            }
+        }
+        else if (hasSlots)
+        {
+            if (hasEmptySlots)
+            {
+                var fillEmpty = new MenuItem { Header = $"填入本页空位（所选 {photos.Count} 张）" };
+                fillEmpty.Click += (_, _) => _vm.FillEmptySlotsWithAssets(photos);
+                menu.Items.Add(fillEmpty);
+            }
+            var seqFill = new MenuItem { Header = $"按顺序填满本页（所选 {photos.Count} 张）" };
+            seqFill.Click += (_, _) => _vm.SequentialFillCurrentSheet(photos);
+            menu.Items.Add(seqFill);
+        }
+
+        var arrange = new MenuItem { Header = "按当前版式排入新页", IsEnabled = hasSlots };
         arrange.Click += (_, _) => _vm.PaginateSelectedPhotos(photos);
-        var strategy = new MenuItem { Header = "选择排版策略…", IsEnabled = arrange.IsEnabled };
-        strategy.Click += (_, _) =>
+        var strategy = new MenuItem { Header = "选择排版策略…", IsEnabled = hasSlots };
+        strategy.Click += async (_, _) =>
         {
             var dlg = new ImportPlacementDialog(_vm, photos.Count, arrangingSelection: true) { Owner = this };
-            if (dlg.ShowDialog() == true) _vm.PaginateSelectedPhotos(photos, dlg.Arrangement);
+            if (dlg.ShowDialog() == true)
+                await _vm.ArrangeSelectedPhotosAsync(photos, dlg.Arrangement);
         };
-        var remove = new MenuItem { Header = $"从工程移除 {photos.Count} 张" };
+        menu.Items.Add(arrange);
+        menu.Items.Add(strategy);
+
+        menu.Items.Add(new Separator());
+        if (photos.Count == 1)
+        {
+            var copyColor = new MenuItem { Header = "复制调色参数", InputGestureText = "Ctrl+C" };
+            copyColor.Click += (_, _) =>
+            {
+                SelectAssetFromTray(photos[0]);
+                _vm.CopyColorParametersCommand.Execute(null);
+            };
+            menu.Items.Add(copyColor);
+        }
+        var pasteColor = new MenuItem
+        {
+            Header = photos.Count == 1 ? "粘贴调色参数" : $"粘贴调色参数到所选 {photos.Count} 张",
+            InputGestureText = photos.Count == 1 ? "Ctrl+V" : "",
+            IsEnabled = _vm.HasCopiedColorEdit
+        };
+        pasteColor.Click += (_, _) => _vm.PasteColorToAssets(photos);
+        menu.Items.Add(pasteColor);
+
+        if (photos.Count == 1)
+        {
+            var reveal = new MenuItem { Header = "在资源管理器中显示原图" };
+            reveal.Click += (_, _) => _vm.RevealAssetInExplorer(photos[0]);
+            menu.Items.Add(reveal);
+        }
+
+        menu.Items.Add(new Separator());
+        var remove = new MenuItem
+        {
+            Header = photos.Count == 1 ? "从工程移除" : $"从工程移除 {photos.Count} 张",
+            InputGestureText = "Delete"
+        };
         remove.Click += (_, _) => RemoveSelectedPhotos(photos);
-        ShowMenu(sender, arrange, strategy, remove);
+        menu.Items.Add(remove);
+    }
+
+    private void SelectedPhotos_Click(object sender, RoutedEventArgs e)
+    {
+        var photos = GetSelectedAssetsInTrayOrder();
+        if (photos.Count == 0) return;
+        var menu = new ContextMenu
+        {
+            PlacementTarget = (UIElement)sender,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom
+        };
+        PopulateAssetSelectionMenu(menu, photos);
+        menu.IsOpen = true;
+    }
+
+    private void SelectUnplacedPhotos_Click(object sender, RoutedEventArgs e)
+    {
+        var unplaced = _vm.Assets.Where(a => a.UsageCount == 0).ToList();
+        if (unplaced.Count == 0) return;
+        ShowPageTray(false);
+        _syncingAssetSelection = true;
+        try
+        {
+            AssetsList.ReplaceSelection(unplaced);
+            AssetsList.ScrollIntoView(unplaced[0]);
+        }
+        finally { _syncingAssetSelection = false; }
+        SelectAssetFromTray(unplaced[0]);
+        _vm.ShowToast($"已选中 {unplaced.Count} 张未排版照片，可点击「已选 {unplaced.Count} 张」排版或移除");
+    }
+
+    private void AssetsList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left) return;
+        var asset = e.OriginalSource is DependencyObject element &&
+            ItemsControl.ContainerFromElement(AssetsList, element) is ListBoxItem item
+                ? item.DataContext as AssetItemViewModel : null;
+        if (asset == null) return;
+        if (!_vm.QuickPlaceAsset(asset) && _vm.SelectedSlot?.PhotoAssetId == asset.Id)
+            _vm.SetViewModeCommand.Execute(CanvasViewMode.SingleRetouchCrop);
+        e.Handled = true;
+    }
+
+    private void AssetsList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var asset = e.OriginalSource is DependencyObject element &&
+            ItemsControl.ContainerFromElement(AssetsList, element) is ListBoxItem item
+                ? item.DataContext as AssetItemViewModel : null;
+        if (asset != null && !AssetsList.SelectedItems.Contains(asset))
+        {
+            _syncingAssetSelection = true;
+            try { AssetsList.ReplaceSelection(new[] { asset }); }
+            finally { _syncingAssetSelection = false; }
+            SelectAssetFromTray(asset);
+        }
+    }
+
+    private void AssetsList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (AssetsList.ContextMenu is not { } menu) return;
+        menu.Items.Clear();
+
+        var clickedAsset = e.CursorLeft < 0 ? AssetsList.SelectedItem as AssetItemViewModel :
+            e.OriginalSource is DependencyObject element &&
+            ItemsControl.ContainerFromElement(AssetsList, element) is ListBoxItem item
+                ? item.DataContext as AssetItemViewModel : null;
+        var photos = GetSelectedAssetsInTrayOrder();
+
+        if (clickedAsset != null && photos.Count > 0)
+        {
+            PopulateAssetSelectionMenu(menu, photos);
+            return;
+        }
+
+        var importItem = new MenuItem { Header = "导入照片…", InputGestureText = "Ctrl+O" };
+        importItem.Click += ImportPhotos_Click;
+        menu.Items.Add(importItem);
+
+        if (_vm.Assets.Count > 0)
+        {
+            var selectAll = new MenuItem { Header = "全选照片", InputGestureText = "Ctrl+A" };
+            selectAll.Click += (_, _) => AssetsList.SelectAll();
+            menu.Items.Add(selectAll);
+        }
+        if (_vm.UnplacedPhotoCount > 0)
+        {
+            var selectUnplaced = new MenuItem { Header = $"选中未排版照片（{_vm.UnplacedPhotoCount} 张）" };
+            selectUnplaced.Click += SelectUnplacedPhotos_Click;
+            menu.Items.Add(selectUnplaced);
+
+            var removeUnplaced = new MenuItem { Header = $"移除未排版照片（{_vm.UnplacedPhotoCount} 张）" };
+            removeUnplaced.Click += (_, _) => _vm.RemoveUnplacedPhotos();
+            menu.Items.Add(removeUnplaced);
+        }
+        if (_vm.Assets.Count > 0)
+        {
+            menu.Items.Add(new Separator());
+            var clearPool = new MenuItem { Header = $"清空全部素材（{_vm.Assets.Count} 张）" };
+            clearPool.Click += (_, _) => RemoveSelectedPhotos(_vm.Assets.ToList());
+            menu.Items.Add(clearPool);
+        }
     }
 
     private void RemoveSelectedPhotos(IReadOnlyList<AssetItemViewModel> photos)
     {
+        if (photos.Count == 0) return;
         int uses = photos.Sum(photo => photo.UsageCount);
         if (uses > 0 && MessageBox.Show(this,
             $"这会清空工程中引用所选照片的 {uses} 个格位。原始文件不会删除。是否继续？",
@@ -668,11 +983,36 @@ public partial class MainWindow : Window
         _vm.ShowToast($"已从工程移除 {photos.Count} 张照片，可撤销。");
     }
 
-    private void AssetMore_Click(object sender, RoutedEventArgs e) => ShowMenu(sender,
-        new MenuItem { Header = "用当前照片填满本页", Command = _vm.FillAllSlotsWithSelectedAssetCommand, IsEnabled = _vm.HasSelectedAsset },
-        new MenuItem { Header = "按素材顺序填满本页", Command = _vm.SequentialFillAllAssetsCommand, IsEnabled = _vm.Assets.Count > 0 },
-        new MenuItem { Header = "加载样片", Command = _vm.LoadSamplePhotosCommand },
-        AssetTrayToggleItem());
+    private void AssetMore_Click(object sender, RoutedEventArgs e)
+    {
+        var items = new List<object>
+        {
+            new MenuItem { Header = "用当前照片填满本页", Command = _vm.FillAllSlotsWithSelectedAssetCommand, IsEnabled = _vm.HasSelectedAsset },
+            new MenuItem { Header = "按素材顺序填满本页", Command = _vm.SequentialFillAllAssetsCommand, IsEnabled = _vm.Assets.Count > 0 },
+            new MenuItem { Header = "清空本页照片", Command = _vm.ClearActiveSheetSlotsCommand, IsEnabled = _vm.HasPlacedPhotosOnActiveSheet },
+            new Separator()
+        };
+
+        if (_vm.UnplacedPhotoCount > 0)
+        {
+            var selectUnplaced = new MenuItem { Header = $"选中未排版照片（{_vm.UnplacedPhotoCount} 张）" };
+            selectUnplaced.Click += SelectUnplacedPhotos_Click;
+            items.Add(selectUnplaced);
+
+            var removeUnplaced = new MenuItem { Header = $"移除未排版照片（{_vm.UnplacedPhotoCount} 张）" };
+            removeUnplaced.Click += (_, _) => _vm.RemoveUnplacedPhotos();
+            items.Add(removeUnplaced);
+        }
+
+        var clearPool = new MenuItem { Header = "清空全部素材", IsEnabled = _vm.Assets.Count > 0 };
+        clearPool.Click += (_, _) => RemoveSelectedPhotos(_vm.Assets.ToList());
+        items.Add(clearPool);
+
+        items.Add(new Separator());
+        items.Add(new MenuItem { Header = "载入示例照片", Command = _vm.LoadSamplePhotosCommand });
+        items.Add(AssetTrayToggleItem());
+        ShowMenu(sender, items.ToArray());
+    }
 
     private MenuItem AssetTrayToggleItem()
     {
@@ -702,13 +1042,26 @@ public partial class MainWindow : Window
 
     private void PageMore_Click(object sender, RoutedEventArgs e)
     {
-        var items = new List<MenuItem>
+        var items = new List<object>
         {
-            new() { Header = "新增空白页", Command = _vm.AddBlankSheetCommand },
-            new() { Header = "复制当前页", Command = _vm.DuplicateActiveSheetCommand },
-            new() { Header = "重新分页全部照片（替换现有页）", Command = _vm.AutoPaginateAllAssetsCommand, IsEnabled = _vm.Assets.Count > 0 },
-            new() { Header = "删除当前页", Command = _vm.RemoveActiveSheetCommand, IsEnabled = _vm.Sheets.Count > 1 }
+            new MenuItem { Header = "新增空白页", InputGestureText = "Ctrl+Shift+N", Command = _vm.AddBlankSheetCommand },
+            new MenuItem { Header = "复制当前页", InputGestureText = "Ctrl+Shift+D", Command = _vm.DuplicateActiveSheetCommand }
         };
+        if (_vm.HasMultiplePages && _vm.ActiveSheet is { } active)
+        {
+            int idx = _vm.Sheets.IndexOf(active);
+            var movePrev = new MenuItem { Header = "前移当前页", IsEnabled = idx > 0 };
+            movePrev.Click += (_, _) => { if (_vm.MoveSheet(active, -1)) SyncPageTraySelection(); };
+            var moveNext = new MenuItem { Header = "后移当前页", IsEnabled = idx >= 0 && idx < _vm.Sheets.Count - 1 };
+            moveNext.Click += (_, _) => { if (_vm.MoveSheet(active, 1)) SyncPageTraySelection(); };
+            items.Add(movePrev);
+            items.Add(moveNext);
+        }
+        items.Add(new Separator());
+        items.Add(new MenuItem { Header = "清空本页照片", Command = _vm.ClearActiveSheetSlotsCommand, IsEnabled = _vm.HasPlacedPhotosOnActiveSheet });
+        items.Add(new MenuItem { Header = "重新分页全部照片（替换现有页）", Command = _vm.AutoPaginateAllAssetsCommand, IsEnabled = _vm.Assets.Count > 0 });
+        items.Add(new Separator());
+        items.Add(new MenuItem { Header = "删除当前页", Command = _vm.RemoveActiveSheetCommand, IsEnabled = _vm.Sheets.Count > 1 });
         if (PagePreviewList.IsVisible && PagePreviewList.SelectedItems.Count > 1)
         {
             var selected = new MenuItem { Header = $"删除所选 {PagePreviewList.SelectedItems.Count} 页" };
@@ -751,11 +1104,23 @@ public partial class MainWindow : Window
     private void AssetsList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _assetDragStart = e.GetPosition(null);
+        _deferAssetMultiSelectReset = false;
         _assetDragCandidate = e.OriginalSource is DependencyObject element &&
             ItemsControl.ContainerFromElement(AssetsList, element) is ListBoxItem item
                 ? item.DataContext as AssetItemViewModel : null;
         if ((_assetDragCandidate == null || Keyboard.Modifiers.HasFlag(ModifierKeys.Alt)) && TryBeginTrayMarquee(AssetsList, e))
+        {
             _assetDragCandidate = null;
+            return;
+        }
+        // Keep multi-selection alive on single mouse-down so the user can drag all selected photos onto the canvas.
+        if (e.ClickCount == 1 && _assetDragCandidate != null && Keyboard.Modifiers == ModifierKeys.None &&
+            AssetsList.SelectedItems.Count > 1 && AssetsList.SelectedItems.Contains(_assetDragCandidate))
+        {
+            _deferAssetMultiSelectReset = true;
+            AssetsList.Focus();
+            e.Handled = true;
+        }
     }
 
     private void AssetsList_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -767,13 +1132,20 @@ public partial class MainWindow : Window
             return;
         }
         if (e.LeftButton != MouseButtonState.Pressed || _assetDragCandidate == null ||
-            Keyboard.Modifiers != ModifierKeys.None || AssetsList.SelectedItems.Count > 1) return;
+            Keyboard.Modifiers != ModifierKeys.None) return;
         Point pos = e.GetPosition(null);
         if (Math.Abs(pos.X - _assetDragStart.X) > 6 || Math.Abs(pos.Y - _assetDragStart.Y) > 6)
         {
             var asset = _assetDragCandidate;
             _assetDragCandidate = null;
-            DragDrop.DoDragDrop(AssetsList, new DataObject(DataFormats.UnicodeText, $"PhotoPrintAsset:{asset.Id}"), DragDropEffects.Copy);
+            _deferAssetMultiSelectReset = false;
+            var selected = AssetsList.SelectedItems.Contains(asset) && AssetsList.SelectedItems.Count > 1
+                ? GetSelectedAssetsInTrayOrder()
+                : [asset];
+            string payload = selected.Count > 1
+                ? $"PhotoPrintAssets:{string.Join(",", selected.Select(a => a.Id))}"
+                : $"PhotoPrintAsset:{asset.Id}";
+            DragDrop.DoDragDrop(AssetsList, new DataObject(DataFormats.UnicodeText, payload), DragDropEffects.Copy);
         }
     }
 
@@ -803,45 +1175,139 @@ public partial class MainWindow : Window
         finally { _importInProgress = false; }
     }
 
-    private void CanvasImage_DragOver(object sender, DragEventArgs e)
+    private void CanvasScroller_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if ((e.Data.GetDataPresent(DataFormats.UnicodeText) &&
-             e.Data.GetData(DataFormats.UnicodeText) is string s &&
-             s.StartsWith("PhotoPrintAsset:", StringComparison.Ordinal)) ||
-            e.Data.GetDataPresent(DataFormats.FileDrop))
+        if (e.ChangedButton == MouseButton.Middle)
         {
-            e.Effects = DragDropEffects.Copy;
+            if (CanvasScroller.ScrollableWidth > 0 || CanvasScroller.ScrollableHeight > 0)
+            {
+                _isMiddlePanningCanvas = true;
+                _middlePanStart = e.GetPosition(CanvasScroller);
+                _middlePanStartH = CanvasScroller.HorizontalOffset;
+                _middlePanStartV = CanvasScroller.VerticalOffset;
+                CanvasScroller.CaptureMouse();
+                CanvasScroller.Cursor = Cursors.ScrollAll;
+                e.Handled = true;
+            }
+            return;
+        }
+        if (e.ChangedButton == MouseButton.Left && e.OriginalSource is DependencyObject src &&
+            FindFocusAncestor<Button>(src) == null)
+        {
+            ViewportHost.Focus();
+        }
+    }
+
+    private void CanvasScroller_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_isMiddlePanningCanvas) return;
+        if (e.MiddleButton != MouseButtonState.Pressed)
+        {
+            EndMiddlePanCanvas();
+            return;
+        }
+        var current = e.GetPosition(CanvasScroller);
+        CanvasScroller.ScrollToHorizontalOffset(_middlePanStartH - (current.X - _middlePanStart.X));
+        CanvasScroller.ScrollToVerticalOffset(_middlePanStartV - (current.Y - _middlePanStart.Y));
+        e.Handled = true;
+    }
+
+    private void CanvasScroller_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Middle && _isMiddlePanningCanvas)
+        {
+            EndMiddlePanCanvas();
             e.Handled = true;
         }
     }
 
+    private void CanvasScroller_LostMouseCapture(object sender, MouseEventArgs e) => EndMiddlePanCanvas();
+
+    private void EndMiddlePanCanvas()
+    {
+        if (!_isMiddlePanningCanvas) return;
+        _isMiddlePanningCanvas = false;
+        if (CanvasScroller.IsMouseCaptured) CanvasScroller.ReleaseMouseCapture();
+        CanvasScroller.Cursor = null;
+    }
+
+    private void CanvasImage_DragOver(object sender, DragEventArgs e)
+    {
+        bool isAssetPayload = e.Data.GetDataPresent(DataFormats.UnicodeText) &&
+            e.Data.GetData(DataFormats.UnicodeText) is string s &&
+            (s.StartsWith("PhotoPrintAsset:", StringComparison.Ordinal) ||
+             s.StartsWith("PhotoPrintAssets:", StringComparison.Ordinal));
+        if (isAssetPayload || e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            e.Effects = DragDropEffects.Copy;
+            e.Handled = true;
+            if (_vm.ViewMode == CanvasViewMode.SheetOverview)
+            {
+                var target = FindSlotAtCanvasPosition(e.GetPosition(CanvasPreviewImage));
+                RenderDropTargetOverlay(target);
+            }
+        }
+    }
+
+    private void CanvasImage_DragLeave(object sender, DragEventArgs e)
+    {
+        if (!_vm.IsTwoPointStraightenActive)
+            OverlayMarksCanvas.Children.Clear();
+    }
+
     private async void CanvasImage_Drop(object sender, DragEventArgs e)
     {
+        if (!_vm.IsTwoPointStraightenActive)
+            OverlayMarksCanvas.Children.Clear();
+
         var pos = e.GetPosition(CanvasPreviewImage);
         var slot = _vm.ViewMode == CanvasViewMode.SheetOverview ? FindSlotAtCanvasPosition(pos) : _vm.SelectedSlot;
 
         if (e.Data.GetDataPresent(DataFormats.UnicodeText) &&
-            e.Data.GetData(DataFormats.UnicodeText) is string tag &&
-            tag.StartsWith("PhotoPrintAsset:", StringComparison.Ordinal) &&
-            slot != null)
+            e.Data.GetData(DataFormats.UnicodeText) is string tag)
         {
-            string assetId = tag["PhotoPrintAsset:".Length..];
-            var assetVm = _vm.Assets.FirstOrDefault(a => a.Id == assetId);
-            if (assetVm != null)
+            if (tag.StartsWith("PhotoPrintAssets:", StringComparison.Ordinal))
             {
-                _vm.AssignAssetToSlot(assetVm, slot);
-                e.Handled = true;
+                var ids = tag["PhotoPrintAssets:".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries);
+                var lookup = _vm.Assets.ToDictionary(a => a.Id);
+                var photos = ids.Select(id => lookup.TryGetValue(id, out var vm) ? vm : null).OfType<AssetItemViewModel>().ToList();
+                if (photos.Count > 0)
+                {
+                    _vm.AssignAssetsStartingAtSlot(photos, slot);
+                    e.Handled = true;
+                }
+                return;
+            }
+            if (tag.StartsWith("PhotoPrintAsset:", StringComparison.Ordinal))
+            {
+                string assetId = tag["PhotoPrintAsset:".Length..];
+                var assetVm = _vm.Assets.FirstOrDefault(a => a.Id == assetId);
+                if (assetVm != null)
+                {
+                    var target = slot ?? _vm.ActiveSheet?.Slots.FirstOrDefault(s => string.IsNullOrEmpty(s.PhotoAssetId));
+                    if (target != null)
+                    {
+                        _vm.AssignAssetToSlot(assetVm, target);
+                        _vm.ShowToast($"已将 {assetVm.DisplayName} 放入第 {target.Index + 1} 格");
+                    }
+                    else
+                    {
+                        _vm.ShowToast("请将照片拖放到具体格位上进行替换");
+                    }
+                    e.Handled = true;
+                }
+                return;
             }
         }
-        else if (e.Data.GetDataPresent(DataFormats.FileDrop) &&
-                 e.Data.GetData(DataFormats.FileDrop) is string[] files)
+        if (e.Data.GetDataPresent(DataFormats.FileDrop) &&
+            e.Data.GetData(DataFormats.FileDrop) is string[] files)
         {
             e.Handled = true;
             await ImportPhotosAsync(files, slot);
         }
     }
 
-    private void CanvasPreviewImage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private async void CanvasPreviewImage_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         ViewportHost.Focus();
         var pos = e.GetPosition(CanvasPreviewImage);
@@ -853,14 +1319,27 @@ public partial class MainWindow : Window
                 _vm.SelectSlot(slot);
                 if (e.ClickCount == 2)
                 {
-                    _vm.SetViewModeCommand.Execute(CanvasViewMode.SingleRetouchCrop);
+                    if (!string.IsNullOrEmpty(slot.PhotoAssetId))
+                        _vm.SetViewModeCommand.Execute(CanvasViewMode.SingleRetouchCrop);
+                    else
+                        await PromptAndImportPhotosAsync(slot);
                 }
                 else if (_vm.ActiveSheet is { } sheet && slot.PhotoAssetId is { } assetId)
                 {
-                    _overviewDrag = (sheet, slot, assetId);
-                    _lastMousePos = pos;
-                    CanvasPreviewImage.CaptureMouse();
-                    CanvasPreviewImage.Cursor = Cursors.Hand;
+                    if (Keyboard.Modifiers == ModifierKeys.Alt && sheet.Slots.Count > 1)
+                    {
+                        _slotSwapDrag = (sheet, slot);
+                        _slotSwapTarget = null;
+                        CanvasPreviewImage.CaptureMouse();
+                        CanvasPreviewImage.Cursor = Cursors.SizeAll;
+                    }
+                    else
+                    {
+                        _overviewDrag = (sheet, slot, assetId);
+                        _lastMousePos = pos;
+                        CanvasPreviewImage.CaptureMouse();
+                        CanvasPreviewImage.Cursor = Cursors.Hand;
+                    }
                 }
             }
             return;
@@ -868,6 +1347,11 @@ public partial class MainWindow : Window
 
         if (_vm.ViewMode == CanvasViewMode.SplitCompare)
         {
+            if (e.ClickCount == 2)
+            {
+                _vm.SplitCompareRatio = 0.5;
+                return;
+            }
             _isDraggingSplit = true;
             CanvasPreviewImage.CaptureMouse();
             CanvasPreviewImage.Cursor = Cursors.SizeWE;
@@ -913,6 +1397,21 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_slotSwapDrag is { } swap)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed || _vm.ViewMode != CanvasViewMode.SheetOverview || _vm.ActiveSheet != swap.Sheet)
+            {
+                if (CanvasPreviewImage.IsMouseCaptured) CanvasPreviewImage.ReleaseMouseCapture();
+                FinishCanvasDrag();
+                return;
+            }
+            var candidate = FindSlotAtCanvasPosition(pos);
+            _slotSwapTarget = candidate != null && !ReferenceEquals(candidate, swap.SourceSlot) ? candidate : null;
+            RenderDropTargetOverlay(_slotSwapTarget);
+            CanvasPreviewImage.Cursor = _slotSwapTarget != null ? Cursors.SizeAll : Cursors.No;
+            return;
+        }
+
         if (_overviewDrag is { } drag)
         {
             if (_vm.ViewMode != CanvasViewMode.SheetOverview || _vm.ActiveSheet != drag.Sheet ||
@@ -950,12 +1449,16 @@ public partial class MainWindow : Window
                 _hoveredSlotId = nextId;
                 RenderHoverOverlay(hovered);
             }
-            CanvasPreviewImage.Cursor = hovered?.PhotoAssetId != null ? Cursors.Hand : Cursors.Arrow;
+            CanvasPreviewImage.Cursor = hovered?.PhotoAssetId != null
+                ? (Keyboard.Modifiers == ModifierKeys.Alt && _vm.ActiveSheet?.Slots.Count > 1 ? Cursors.SizeAll : Cursors.Hand)
+                : Cursors.Arrow;
         }
         else
         {
             CanvasPreviewImage.Cursor = _vm.IsTwoPointStraightenActive ? Cursors.Cross
                 : _vm.ViewMode == CanvasViewMode.SplitCompare ? Cursors.SizeWE : Cursors.Hand;
+            if (_vm.IsTwoPointStraightenActive && _firstHorizonPoint is { } p1)
+                RenderTwoPointStraightenGuide(p1, pos);
         }
     }
 
@@ -968,6 +1471,12 @@ public partial class MainWindow : Window
 
     private void CanvasPreviewImage_MouseLeave(object sender, MouseEventArgs e)
     {
+        if (_vm.IsTwoPointStraightenActive && _firstHorizonPoint is { } p1)
+        {
+            OverlayMarksCanvas.Children.Clear();
+            DrawPointMarker(p1);
+            return;
+        }
         if (_hoveredSlotId != null)
         {
             _hoveredSlotId = null;
@@ -988,9 +1497,6 @@ public partial class MainWindow : Window
         {
             Width = Math.Max(4, hovered.WidthMm * scaleX),
             Height = Math.Max(4, hovered.HeightMm * scaleY),
-            Stroke = FindResource("BrushAccent") as Brush ?? Brushes.DodgerBlue,
-            StrokeThickness = 1.6,
-            StrokeDashArray = [4, 3],
             Fill = new SolidColorBrush(Color.FromArgb(20, 59, 130, 246))
         };
         Canvas.SetLeft(rect, hovered.XMm * scaleX);
@@ -998,11 +1504,45 @@ public partial class MainWindow : Window
         OverlayMarksCanvas.Children.Add(rect);
     }
 
+    private void RenderDropTargetOverlay(LayoutSlot? target)
+    {
+        if (_vm.IsTwoPointStraightenActive) return;
+        OverlayMarksCanvas.Children.Clear();
+        if (target == null || _vm.ActiveSheet == null) return;
+
+        double scaleX = PaperShadowBorder.Width / Math.Max(1, _vm.ActiveSheet.PaperWidthMm);
+        double scaleY = PaperShadowBorder.Height / Math.Max(1, _vm.ActiveSheet.PaperHeightMm);
+
+        var rect = new Rectangle
+        {
+            Width = Math.Max(4, target.WidthMm * scaleX),
+            Height = Math.Max(4, target.HeightMm * scaleY),
+            Fill = new SolidColorBrush(Color.FromArgb(46, 59, 130, 246)),
+            Stroke = new SolidColorBrush(Color.FromRgb(59, 130, 246)),
+            StrokeThickness = 2.2,
+            StrokeDashArray = [5, 3]
+        };
+        Canvas.SetLeft(rect, target.XMm * scaleX);
+        Canvas.SetTop(rect, target.YMm * scaleY);
+        OverlayMarksCanvas.Children.Add(rect);
+    }
+
     private void CanvasPreviewImage_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        var swap = _slotSwapDrag;
+        var swapTarget = _slotSwapTarget;
+        _slotSwapDrag = null;
+        _slotSwapTarget = null;
         if (CanvasPreviewImage.IsMouseCaptured)
             CanvasPreviewImage.ReleaseMouseCapture();
         FinishCanvasDrag();
+        if (swap is { } s)
+        {
+            OverlayMarksCanvas.Children.Clear();
+            CanvasPreviewImage.Cursor = null;
+            if (swapTarget != null && _vm.ActiveSheet == s.Sheet)
+                _vm.SwapOrMoveSlot(s.SourceSlot, swapTarget);
+        }
     }
 
     private void CanvasPreviewImage_LostMouseCapture(object sender, MouseEventArgs e) => FinishCanvasDrag();
@@ -1015,17 +1555,131 @@ public partial class MainWindow : Window
             _isPanningOverview = false;
             _vm.EndContinuousEdit();
         }
+        if (_slotSwapDrag != null)
+        {
+            _slotSwapDrag = null;
+            _slotSwapTarget = null;
+            OverlayMarksCanvas.Children.Clear();
+            CanvasPreviewImage.Cursor = null;
+        }
         _overviewDrag = null;
         _isDraggingSplit = false;
     }
 
-    private void CanvasPreviewImage_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    private void CanvasPreviewImage_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        if (_vm.ViewMode == CanvasViewMode.SheetOverview)
+        if (CanvasPreviewImage.ContextMenu is not { } menu) return;
+        menu.Items.Clear();
+
+        if (_vm.ViewMode != CanvasViewMode.SheetOverview)
         {
-            var slot = FindSlotAtCanvasPosition(e.GetPosition(CanvasPreviewImage));
-            if (slot != null) _vm.SelectSlot(slot);
+            var backOverview = new MenuItem { Header = "返回排版总览", InputGestureText = "Esc" };
+            backOverview.Click += (_, _) => _vm.SetViewModeCommand.Execute(CanvasViewMode.SheetOverview);
+            menu.Items.Add(backOverview);
+            if (_vm.HasSelectedAsset)
+            {
+                menu.Items.Add(new Separator());
+                menu.Items.Add(new MenuItem { Header = "逆时针旋转 90°", InputGestureText = "Ctrl+[", Command = _vm.RotateQuarterLeftCommand });
+                menu.Items.Add(new MenuItem { Header = "顺时针旋转 90°", InputGestureText = "Ctrl+]", Command = _vm.RotateQuarterRightCommand });
+                menu.Items.Add(new MenuItem { Header = "水平镜像翻转", Command = _vm.ToggleFlipHorizontalCommand });
+                menu.Items.Add(new MenuItem { Header = "重置裁剪与旋转", Command = _vm.ResetCropGeometryCommand, IsEnabled = _vm.HasCropGeometryEdits });
+                menu.Items.Add(new Separator());
+                menu.Items.Add(new MenuItem { Header = "复制调色参数", InputGestureText = "Ctrl+C", Command = _vm.CopyColorParametersCommand });
+                menu.Items.Add(new MenuItem { Header = "粘贴调色参数", InputGestureText = "Ctrl+V", Command = _vm.PasteColorToSelectedCommand, IsEnabled = _vm.CanPasteColorToSelected });
+            }
+            return;
         }
+
+        var slot = e.CursorLeft >= 0
+            ? FindSlotAtCanvasPosition(Mouse.GetPosition(CanvasPreviewImage))
+            : _vm.SelectedSlot;
+        if (slot != null && (slot != _vm.SelectedSlot || slot.PhotoAssetId != null && slot.PhotoAssetId != _vm.SelectedAsset?.Id))
+            _vm.SelectSlot(slot);
+        bool multiSlot = _vm.ActiveSheet?.Slots.Count > 1;
+        if (slot != null && !string.IsNullOrEmpty(slot.PhotoAssetId))
+        {
+            var singleEdit = new MenuItem { Header = "进入单图裁剪精修", InputGestureText = "R" };
+            singleEdit.Click += CtxSingleEdit_Click;
+            menu.Items.Add(singleEdit);
+
+            var replacePhoto = new MenuItem { Header = "替换为本地照片…" };
+            replacePhoto.Click += async (_, _) => await PromptAndImportPhotosAsync(slot);
+            menu.Items.Add(replacePhoto);
+
+            if (multiSlot)
+                menu.Items.Add(new MenuItem { Header = "用此照片填满本页", Command = _vm.FillAllSlotsWithSelectedAssetCommand });
+            if (_vm.CanForkIndependentAsset)
+                menu.Items.Add(new MenuItem { Header = "拆分独立微调", Command = _vm.ForkIndependentAssetForSelectedSlotCommand });
+
+            menu.Items.Add(new Separator());
+            menu.Items.Add(new MenuItem { Header = "逆时针旋转 90°", InputGestureText = "Ctrl+[", Command = _vm.RotateQuarterLeftCommand });
+            menu.Items.Add(new MenuItem { Header = "顺时针旋转 90°", InputGestureText = "Ctrl+]", Command = _vm.RotateQuarterRightCommand });
+            menu.Items.Add(new MenuItem { Header = "旋转以适配格位方向", Command = _vm.AutoOrientPhotoToSlotCommand });
+            menu.Items.Add(new MenuItem { Header = "水平镜像翻转", Command = _vm.ToggleFlipHorizontalCommand });
+            var fitToggle = new MenuItem { Header = _vm.IsCoverFitMode ? "切换为完整显示（留白）" : "切换为裁切填满格位" };
+            fitToggle.Click += (_, _) => _vm.IsCoverFitMode = !_vm.IsCoverFitMode;
+            menu.Items.Add(fitToggle);
+            if (slot.PolaroidStyle == null)
+            {
+                var editCaption = new MenuItem { Header = string.IsNullOrWhiteSpace(slot.CustomCaption) ? "添加格位标注…" : "编辑格位标注…" };
+                editCaption.Click += (_, _) =>
+                {
+                    var dlg = new PromptInputDialog("格位标注", "输入显示在照片底部的角标文字（留空可清除）：",
+                        slot.CustomCaption ?? "", _vm.IsDarkTheme, allowEmpty: true) { Owner = this };
+                    if (dlg.ShowDialog() == true)
+                        _vm.UpdateSelectedSlotCaption(dlg.InputText);
+                };
+                menu.Items.Add(editCaption);
+            }
+            menu.Items.Add(new MenuItem { Header = "重置裁剪与旋转", Command = _vm.ResetCropGeometryCommand, IsEnabled = _vm.HasCropGeometryEdits });
+
+            menu.Items.Add(new Separator());
+            menu.Items.Add(new MenuItem { Header = "复制调色参数", InputGestureText = "Ctrl+C", Command = _vm.CopyColorParametersCommand });
+            menu.Items.Add(new MenuItem { Header = "粘贴调色参数", InputGestureText = "Ctrl+V", Command = _vm.PasteColorToSelectedCommand, IsEnabled = _vm.CanPasteColorToSelected });
+
+            menu.Items.Add(new Separator());
+            menu.Items.Add(new MenuItem { Header = "清空此格位", InputGestureText = "Delete", Command = _vm.ClearSelectedSlotCommand });
+            if (multiSlot)
+                menu.Items.Add(new MenuItem { Header = "清空本页全部照片", Command = _vm.ClearActiveSheetSlotsCommand, IsEnabled = _vm.HasPlacedPhotosOnActiveSheet });
+            return;
+        }
+
+        if (slot != null)
+        {
+            if (_vm.SelectedAsset is { } selAsset)
+            {
+                var putSelected = new MenuItem { Header = $"放入「{selAsset.DisplayName}」" };
+                putSelected.Click += (_, _) =>
+                {
+                    _vm.AssignAssetToSlot(selAsset, slot);
+                    _vm.ShowToast($"已将 {selAsset.DisplayName} 放入第 {slot.Index + 1} 格");
+                };
+                menu.Items.Add(putSelected);
+            }
+            var importToSlot = new MenuItem { Header = "导入照片到此格位…" };
+            importToSlot.Click += async (_, _) => await PromptAndImportPhotosAsync(slot);
+            menu.Items.Add(importToSlot);
+
+            if (_vm.Assets.Count > 0)
+                menu.Items.Add(new MenuItem { Header = "按素材顺序填满本页", Command = _vm.SequentialFillAllAssetsCommand });
+            if (_vm.HasPlacedPhotosOnActiveSheet)
+            {
+                menu.Items.Add(new Separator());
+                menu.Items.Add(new MenuItem { Header = "清空本页全部照片", Command = _vm.ClearActiveSheetSlotsCommand });
+            }
+            return;
+        }
+
+        var importPage = new MenuItem { Header = "导入照片…", InputGestureText = "Ctrl+O" };
+        importPage.Click += ImportPhotos_Click;
+        menu.Items.Add(importPage);
+        if (_vm.Assets.Count > 0)
+            menu.Items.Add(new MenuItem { Header = "按素材顺序填满本页", Command = _vm.SequentialFillAllAssetsCommand });
+        if (_vm.HasPlacedPhotosOnActiveSheet)
+            menu.Items.Add(new MenuItem { Header = "清空本页全部照片", Command = _vm.ClearActiveSheetSlotsCommand });
+        menu.Items.Add(new Separator());
+        menu.Items.Add(new MenuItem { Header = "新增空白页", InputGestureText = "Ctrl+Shift+N", Command = _vm.AddBlankSheetCommand });
+        menu.Items.Add(new MenuItem { Header = "复制当前页", InputGestureText = "Ctrl+Shift+D", Command = _vm.DuplicateActiveSheetCommand });
     }
 
     private void CtxSingleEdit_Click(object sender, RoutedEventArgs e)
@@ -1066,6 +1720,54 @@ public partial class MainWindow : Window
         OverlayMarksCanvas.Children.Add(el);
     }
 
+    private void RenderTwoPointStraightenGuide(Point p1, Point p2)
+    {
+        OverlayMarksCanvas.Children.Clear();
+        var shadowLine = new Line
+        {
+            X1 = p1.X, Y1 = p1.Y, X2 = p2.X, Y2 = p2.Y,
+            Stroke = new SolidColorBrush(Color.FromArgb(140, 0, 0, 0)),
+            StrokeThickness = 3.0
+        };
+        var guideLine = new Line
+        {
+            X1 = p1.X, Y1 = p1.Y, X2 = p2.X, Y2 = p2.Y,
+            Stroke = Brushes.White,
+            StrokeThickness = 1.6,
+            StrokeDashArray = [5, 3]
+        };
+        OverlayMarksCanvas.Children.Add(shadowLine);
+        OverlayMarksCanvas.Children.Add(guideLine);
+        DrawPointMarker(p1);
+        DrawPointMarker(p2);
+
+        double dx = p2.X - p1.X, dy = p2.Y - p1.Y;
+        if (Math.Sqrt(dx * dx + dy * dy) >= 8)
+        {
+            double angle = Math.Atan2(dy, dx) * 180.0 / Math.PI;
+            if (angle > 90) angle -= 180;
+            if (angle < -90) angle += 180;
+            var badge = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(205, 15, 23, 42)),
+                CornerRadius = new CornerRadius(3),
+                Padding = new Thickness(6, 2, 6, 2),
+                Child = new TextBlock
+                {
+                    Text = $"{-angle:+0.0;-0.0;0.0}°",
+                    Foreground = Brushes.White,
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold
+                }
+            };
+            double maxLeft = Math.Max(4, OverlayMarksCanvas.ActualWidth - 54);
+            double maxTop = Math.Max(4, OverlayMarksCanvas.ActualHeight - 24);
+            Canvas.SetLeft(badge, Math.Clamp((p1.X + p2.X) * 0.5 + 8, 4, maxLeft));
+            Canvas.SetTop(badge, Math.Clamp((p1.Y + p2.Y) * 0.5 - 24, 4, maxTop));
+            OverlayMarksCanvas.Children.Add(badge);
+        }
+    }
+
     private LayoutSlot? FindSlotAtCanvasPosition(Point pos)
     {
         if (_vm.ActiveSheet == null || CanvasPreviewImage.ActualWidth <= 1 || CanvasPreviewImage.ActualHeight <= 1)
@@ -1082,6 +1784,13 @@ public partial class MainWindow : Window
     // === 滑块 Undo 钩子 & 曲线/HSL 按钮 ===
     private void Slider_EditStarted(object? sender, EventArgs e) => _vm.BeginContinuousEdit();
     private void Slider_EditCompleted(object? sender, EventArgs e) => _vm.EndContinuousEdit();
+
+    private void CaptionTextBox_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (sender is TextBox box)
+            box.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+        _vm.EndContinuousEdit();
+    }
     private void ToneCurveEditor_CurveChanged(object? sender, EventArgs e) => _vm.OnEditMutated();
 
     private void CurveCh0_Click(object sender, RoutedEventArgs e) => _vm.ActiveCurveChannel = 0;
@@ -1093,246 +1802,5 @@ public partial class MainWindow : Window
     {
         if (sender is FrameworkElement fe && int.TryParse(fe.Tag?.ToString(), out int idx))
             _vm.ActiveHslChannel = idx;
-    }
-
-    // === 键盘快捷键 ===
-    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        var modifiers = Keyboard.Modifiers;
-        if (e.Key == Key.S && (modifiers == ModifierKeys.Control || modifiers == (ModifierKeys.Control | ModifierKeys.Shift)))
-        {
-            if (Keyboard.FocusedElement is TextBox box)
-                box.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
-            if (modifiers == ModifierKeys.Control) _vm.SaveProjectCommand.Execute(null);
-            else _vm.SaveProjectAsCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
-        if (e.Key == Key.OemComma && (modifiers == ModifierKeys.Control || modifiers == (ModifierKeys.Control | ModifierKeys.Shift)))
-        {
-            if (modifiers == ModifierKeys.Control) Settings_Click(this, e);
-            else PreviewSettings_Click(this, e);
-            e.Handled = true;
-            return;
-        }
-        if (Keyboard.FocusedElement is TextBox) return;
-
-        if (modifiers == ModifierKeys.Control && e.Key == Key.A && AssetsList.IsKeyboardFocusWithin)
-        {
-            AssetsList.SelectAll();
-            e.Handled = true;
-            return;
-        }
-        if (modifiers == ModifierKeys.Control && e.Key == Key.A && PagePreviewList.IsKeyboardFocusWithin)
-        {
-            PagePreviewList.SelectAll();
-            e.Handled = true;
-            return;
-        }
-
-        if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.O)
-        {
-            if (!e.IsRepeat) _vm.OpenProjectCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
-        if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.OemPlus)
-        {
-            ZoomIn_Click(this, e);
-            e.Handled = true;
-            return;
-        }
-        if (modifiers == ModifierKeys.Control && e.Key == Key.G)
-        {
-            JumpToPage_Click(this, e);
-            e.Handled = true;
-            return;
-        }
-        if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.Z)
-        {
-            _vm.RedoCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
-        if (modifiers == ModifierKeys.Alt && e.SystemKey is Key.D1 or Key.D2 or Key.D3)
-        {
-            _vm.RightTabIndex = (int)e.SystemKey - (int)Key.D1;
-            e.Handled = true;
-            return;
-        }
-        if (ViewportHost.IsKeyboardFocused && modifiers == ModifierKeys.Shift && e.Key == Key.T && _vm.HasSelectedAsset)
-        {
-            if (!e.IsRepeat) _vm.ToggleTwoPointStraightenCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
-        if (modifiers == ModifierKeys.None &&
-            (ViewportHost.IsKeyboardFocused ||
-             ((e.Key is Key.PageUp or Key.PageDown) && !IsWithinEditingControl(Keyboard.FocusedElement as DependencyObject))))
-        {
-            switch (e.Key)
-            {
-                case Key.PageUp:
-                case Key.Left:
-                case Key.Up: _vm.PrevSheetCommand.Execute(null); e.Handled = true; return;
-                case Key.PageDown:
-                case Key.Right:
-                case Key.Down: _vm.NextSheetCommand.Execute(null); e.Handled = true; return;
-                case Key.Home: _vm.SwitchToSheet(0); e.Handled = true; return;
-                case Key.End: _vm.SwitchToSheet(_vm.Sheets.Count - 1); e.Handled = true; return;
-                case Key.G:
-                    if (!e.IsRepeat) _vm.SetViewModeCommand.Execute(CanvasViewMode.SheetOverview);
-                    e.Handled = true;
-                    return;
-                case Key.R when _vm.HasSelectedAsset:
-                    if (!e.IsRepeat) _vm.SetViewModeCommand.Execute(CanvasViewMode.SingleRetouchCrop);
-                    e.Handled = true;
-                    return;
-                case Key.Y when _vm.HasSelectedAsset || _vm.ViewMode == CanvasViewMode.SplitCompare:
-                    if (!e.IsRepeat) _vm.SetViewModeCommand.Execute(_vm.ViewMode == CanvasViewMode.SplitCompare
-                        ? _viewBeforeCompare : CanvasViewMode.SplitCompare);
-                    e.Handled = true;
-                    return;
-                case Key.J:
-                    if (!e.IsRepeat) _vm.ShowClippingOverlay = !_vm.ShowClippingOverlay;
-                    e.Handled = true;
-                    return;
-            }
-        }
-
-        if (e.Key == Key.Escape)
-        {
-            if (_vm.IsTwoPointStraightenActive)
-            {
-                _firstHorizonPoint = null;
-                OverlayMarksCanvas.Children.Clear();
-                _vm.ToggleTwoPointStraightenCommand.Execute(null);
-                e.Handled = true;
-                return;
-            }
-            if (_vm.ViewMode != CanvasViewMode.SheetOverview)
-            {
-                _vm.SetViewModeCommand.Execute(CanvasViewMode.SheetOverview);
-                e.Handled = true;
-                return;
-            }
-        }
-
-        if (e.Key == Key.Space && modifiers == ModifierKeys.None && ViewportHost.IsKeyboardFocused && !e.IsRepeat)
-        {
-            _vm.IsHoldingCompare = true;
-            e.Handled = true;
-            return;
-        }
-
-        if (modifiers == ModifierKeys.Control)
-        {
-            switch (e.Key)
-            {
-                case Key.O: ImportPhotos_Click(this, new RoutedEventArgs()); e.Handled = true; break;
-                case Key.Z: _vm.UndoCommand.Execute(null); e.Handled = true; break;
-                case Key.Y: _vm.RedoCommand.Execute(null); e.Handled = true; break;
-                case Key.P: _vm.PrintActiveSheetCommand.Execute(null); e.Handled = true; break;
-                case Key.E: _vm.ExportCurrentJpegCommand.Execute(null); e.Handled = true; break;
-                case Key.C: _vm.CopyColorParametersCommand.Execute(null); e.Handled = true; break;
-                case Key.V: _vm.PasteColorToSelectedCommand.Execute(null); e.Handled = true; break;
-                case Key.OemOpenBrackets:
-                    if (!e.IsRepeat) _vm.RotateQuarterLeftCommand.Execute(null);
-                    e.Handled = true;
-                    break;
-                case Key.OemCloseBrackets:
-                    if (!e.IsRepeat) _vm.RotateQuarterRightCommand.Execute(null);
-                    e.Handled = true;
-                    break;
-                case Key.OemPlus:
-                case Key.Add: ZoomIn_Click(this, e); e.Handled = true; break;
-                case Key.OemMinus:
-                case Key.Subtract: ZoomOut_Click(this, e); e.Handled = true; break;
-                case Key.D0:
-                case Key.NumPad0: ZoomFit_Click(this, e); e.Handled = true; break;
-            }
-        }
-        else if (modifiers == ModifierKeys.None && e.Key == Key.Delete && PagePreviewList.IsKeyboardFocusWithin)
-        {
-            if (!e.IsRepeat) DeleteSelectedPages();
-            e.Handled = true;
-        }
-        else if (modifiers == ModifierKeys.None && e.Key == Key.Delete &&
-                 (ViewportHost.IsKeyboardFocused || AssetsList.IsKeyboardFocusWithin))
-        {
-            if (AssetsList.IsKeyboardFocusWithin)
-            {
-                if (AssetsList.SelectedItems.Count == 0) return;
-                RemoveSelectedPhotos(AssetsList.SelectedItems.Cast<AssetItemViewModel>().ToList());
-            }
-            else
-            {
-                _vm.ClearSelectedSlotCommand.Execute(null);
-            }
-            e.Handled = true;
-        }
-        else if (e.Key == Key.F6)
-        {
-            var next = _vm.ViewMode == CanvasViewMode.SheetOverview
-                ? CanvasViewMode.SingleRetouchCrop
-                : CanvasViewMode.SheetOverview;
-            _vm.SetViewModeCommand.Execute(next);
-            e.Handled = true;
-        }
-        else if (e.Key == Key.F1)
-        {
-            ShowShortcutsHelp();
-            e.Handled = true;
-        }
-    }
-
-    private static bool IsWithinEditingControl(DependencyObject? element)
-    {
-        for (var parent = element; parent is Visual; parent = VisualTreeHelper.GetParent(parent))
-        {
-            if (parent is ComboBox or ListBox or PhotoPrintStudio.App.Controls.StudioSliderRow)
-                return true;
-        }
-        return false;
-    }
-
-    private void ShowShortcutsHelp()
-    {
-        const string guide =
-            """
-            【工程与输出】
-            Ctrl+O 导入照片    Ctrl+Shift+O 打开工程
-            Ctrl+S 保存当前工作    Ctrl+Shift+S 另存为
-            Ctrl+Z 撤销    Ctrl+Y 或 Ctrl+Shift+Z 重做
-            Ctrl+E 导出当前页 JPG    Ctrl+P 打印当前页
-            Ctrl+逗号 设置    Ctrl+Shift+逗号 预览设置
-
-            【画布与排版】
-            Ctrl+= / Ctrl+- 缩放画布    Ctrl+0 适应窗口
-            Page Up / Page Down 翻页    Ctrl+G 跳转页码
-            点击画布后，方向键翻页，Home / End 跳到首页或末页
-            点击画布后，G 排版总览，R 单图裁剪，Y 开关分屏对比
-            点击画布后，J 开关溢出提示，Shift+T 两点拉直，按住空格对比原图
-            排版总览中拖动照片调整构图，Shift+滚轮缩放照片
-            F6 切换排版总览和单图裁剪    Alt+1 / 2 / 3 切换右侧面板
-            素材栏拖空白框选，Alt+拖动可从卡片开始，Ctrl+A 全选
-            Delete 在打印页面删除所选页，在素材池移除所选照片，在画布清空当前格位
-
-            【照片与参数】
-            Ctrl+[ / Ctrl+] 逆时针或顺时针旋转照片 90°
-            Ctrl+C / Ctrl+V 复制或粘贴照片调色参数
-            聚焦滑块后，方向键微调，Shift+方向键调整十步
-            Enter 或 F2 输入数值，Esc 取消，Alt+Backspace 恢复该项默认值
-            """;
-        MessageBox.Show(this, guide, "光影印坊快捷键与使用指南",
-            MessageBoxButton.OK, MessageBoxImage.Information);
-    }
-
-    private void Window_PreviewKeyUp(object sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Space && _vm.IsHoldingCompare)
-        {
-            _vm.IsHoldingCompare = false;
-        }
     }
 }

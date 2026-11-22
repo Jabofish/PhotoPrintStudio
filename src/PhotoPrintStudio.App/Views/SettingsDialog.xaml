@@ -2,97 +2,107 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:PhotoPrintStudio.App.Controls"
-        Title="光影印坊设置" Width="540" Height="520" MinHeight="330" MinWidth="430"
+        Title="设置" Width="540" Height="520" MinHeight="330" MinWidth="430"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource StudioWindow}"
         Background="{DynamicResource BrushBgPanel}">
-    <DockPanel Margin="16">
-        <Button DockPanel.Dock="Bottom" Content="完成" IsCancel="True" Style="{StaticResource PrimaryButton}"
-                HorizontalAlignment="Right" MinWidth="80" Margin="0,12,0,0" />
-        <TabControl x:Name="Sections" Style="{StaticResource StudioTabControl}">
-            <TabItem Header="外观" Style="{StaticResource StudioTabItem}">
-                <StackPanel Margin="14">
-                    <TextBlock Text="主题" FontWeight="SemiBold" Margin="0,0,0,6" />
-                    <ComboBox ItemsSource="{Binding AppearanceOptions}" DisplayMemberPath="Value" SelectedValuePath="Key"
-                              SelectedValue="{Binding Appearance, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="160" />
-                    <TextBlock Text="跟随系统时，软件使用 Windows 的应用颜色模式。"
-                               TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,8,0,0" />
-                </StackPanel>
-            </TabItem>
-            <TabItem Header="画布预览" Style="{StaticResource StudioTabItem}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="14">
-                        <TextBlock Text="参考线与辅助提示" FontWeight="SemiBold" Margin="0,0,0,6" />
-                        <TextBlock Text="这些选项只影响屏幕显示，不会写入导出文件或打印成品。"
-                                   TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,12" />
-                        <CheckBox Content="毫米标尺" IsChecked="{Binding ShowRulers}" Margin="0,0,0,8" />
-                        <CheckBox Content="打印安全边距" IsChecked="{Binding ShowSafeMarginOverlay}" Margin="0,0,0,8" />
-                        <CheckBox Content="裁切出血区域" IsChecked="{Binding ShowBleedOverlay}" Margin="0,0,0,8" />
-                        <CheckBox Content="证件照构图参考线" IsChecked="{Binding ShowIdGuidelines}" Margin="0,0,0,8" />
-                        <CheckBox Content="人脸框和五官定位点（单图视图）" IsChecked="{Binding ShowFaceLandmarksOverlay}" Margin="0,0,0,8" />
-                        <CheckBox Content="高光和暗部溢出提示" IsChecked="{Binding ShowClippingOverlay}" Margin="0,0,0,10" />
-                        <Button Content="恢复预览默认值" Style="{StaticResource GhostButton}" Click="ResetPreviewDefaults_Click"
-                                HorizontalAlignment="Left" />
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <DockPanel Grid.Row="0">
+            <TabControl x:Name="Sections" Style="{StaticResource StudioTabControl}" Margin="4,0">
+                <TabItem Header="外观" Style="{StaticResource StudioTabItem}">
+                    <StackPanel Margin="16,6,16,12">
+                        <TextBlock Text="主题" FontWeight="SemiBold" Margin="0,0,0,6" />
+                        <ComboBox ItemsSource="{Binding AppearanceOptions}" DisplayMemberPath="Value" SelectedValuePath="Key"
+                                  SelectedValue="{Binding Appearance, Mode=TwoWay}" HorizontalAlignment="Left" MinWidth="160" />
+                        <TextBlock Text="“跟随系统”使用 Windows 的应用颜色模式。"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,8,0,0" />
                     </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-            <TabItem Header="打印与导出" Style="{StaticResource StudioTabItem}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="14">
-                        <TextBlock Text="默认打印机" FontWeight="SemiBold" Margin="0,0,0,4" />
-                        <ComboBox ItemsSource="{Binding DefaultPrinterChoices}" DisplayMemberPath="Value" SelectedValuePath="Key"
-                                  SelectedValue="{Binding DefaultPrinterName, Mode=TwoWay}" Margin="0,0,0,8" />
-                        <CheckBox Content="启动时优先选择上次打印使用的设备" IsChecked="{Binding UseLastPrintedPrinter}" Margin="0,0,0,7" />
-                        <CheckBox Content="显示虚拟打印机（PDF、XPS 等）" IsChecked="{Binding ShowVirtualPrinters}" />
-                        <Separator Margin="0,12" />
-                        <TextBlock Text="打印分辨率（DPI）" FontWeight="SemiBold" Margin="0,0,0,4" />
-                        <ComboBox ItemsSource="{Binding DpiOptions}" SelectedItem="{Binding PrintDpi, Mode=TwoWay}"
-                                  HorizontalAlignment="Left" MinWidth="100" Margin="0,0,0,10" />
-                        <TextBlock Text="导出分辨率（DPI）" FontWeight="SemiBold" Margin="0,0,0,4" />
-                        <ComboBox ItemsSource="{Binding DpiOptions}" SelectedItem="{Binding ExportDpi, Mode=TwoWay}"
-                                  HorizontalAlignment="Left" MinWidth="100" Margin="0,0,0,10" />
-                        <controls:StudioSliderRow x:Name="JpegQualitySlider" LabelWidth="100" Title="JPG 图片品质" Minimum="75" Maximum="100"
-                                                  Step="1" Value="{Binding JpegQuality}" />
-                        <controls:StudioSliderRow x:Name="OutputSharpeningSlider" LabelWidth="100" Title="输出锐化强度" Minimum="0" Maximum="100"
-                                                  Step="5" DefaultValue="0" Value="{Binding OutputSharpeningAmount}" Margin="0,4,0,0" />
-                        <CheckBox Content="导出 JPG/PNG 时嵌入标准 sRGB ICC 色彩配置" IsChecked="{Binding EmbedIccProfileOnExport}" Margin="0,8,0,6" />
-                        <TextBlock Text="普通冲印默认 300 DPI，JPG 默认品质 100。输出锐化在最终冲印像素尺度上进行纯亮度补偿，适合相纸网点防发虚。"
-                                   TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,8" />
-                        <Button Content="恢复输出默认值" Style="{StaticResource GhostButton}" Click="ResetExportDefaults_Click"
-                                HorizontalAlignment="Left" />
-                        <Separator Margin="0,12" />
-                        <TextBlock Text="相纸色彩配置与软打样（支持 RGB / CMYK CLUT ICC）" FontWeight="SemiBold" Margin="0,0,0,6" />
-                        <CheckBox Content="在画布上预览印刷色彩（软打样）" IsChecked="{Binding EnableSoftProofing}" Margin="0,0,0,8" />
-                        <ComboBox ItemsSource="{Binding AvailableIccFiles}" SelectedItem="{Binding SelectedIccPath, Mode=TwoWay}" Margin="0,0,0,8" />
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <TextBlock Text="渲染意图：" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <ComboBox ItemsSource="{Binding SoftProofIntentOptions}" DisplayMemberPath="Value" SelectedValuePath="Key"
-                                      SelectedValue="{Binding SoftProofIntent, Mode=TwoWay}" MinWidth="170" />
+                </TabItem>
+                <TabItem Header="画布预览" Style="{StaticResource StudioTabItem}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="16,6,16,12">
+                            <TextBlock Text="参考线与辅助提示" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <TextBlock Text="仅影响屏幕显示，不会写入导出文件或打印成品。"
+                                       TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,12" />
+                            <CheckBox Content="毫米标尺" IsChecked="{Binding ShowRulers}" Margin="0,0,0,8" />
+                            <CheckBox Content="打印安全边距" IsChecked="{Binding ShowSafeMarginOverlay}" Margin="0,0,0,8" />
+                            <CheckBox Content="裁切出血区域" IsChecked="{Binding ShowBleedOverlay}" Margin="0,0,0,8" />
+                            <CheckBox Content="证件照构图参考线" IsChecked="{Binding ShowIdGuidelines}" Margin="0,0,0,8" />
+                            <CheckBox Content="人脸框和五官定位点（单图视图）" IsChecked="{Binding ShowFaceLandmarksOverlay}" Margin="0,0,0,8" />
+                            <CheckBox Content="高光和暗部溢出提示" IsChecked="{Binding ShowClippingOverlay}" Margin="0,0,0,10" />
+                            <Button Content="恢复预览默认值" Style="{StaticResource GhostButton}" Click="ResetPreviewDefaults_Click"
+                                    HorizontalAlignment="Left" />
                         </StackPanel>
-                        <CheckBox Content="模拟纸白（绝对比色预览相纸底色）" IsChecked="{Binding SoftProofSimulatePaperWhite}" Margin="0,0,0,6" />
-                        <CheckBox Content="超色域警告（洋红高亮超出相纸色域区域）" IsChecked="{Binding SoftProofGamutWarning}" Margin="0,0,0,8" />
-                        <Button Content="导入相纸配置…" Style="{StaticResource ModernButton}" Click="ImportIcc_Click" HorizontalAlignment="Left" />
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-            <TabItem Header="高级" Style="{StaticResource StudioTabItem}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="14">
-                        <TextBlock Text="离线识别" FontWeight="SemiBold" Margin="0,0,0,6" />
-                        <TextBlock Text="{Binding AiMattingStatusText}" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding FaceDetectionStatusText}" TextWrapping="Wrap" Margin="0,4,0,8" />
-                        <ComboBox ItemsSource="{Binding AvailableAiModels}" SelectedItem="{Binding SelectedAiModelName, Mode=TwoWay}"
-                                  IsEnabled="{Binding CanSelectAiModel}" Margin="0,0,0,6" />
-                        <WrapPanel>
-                            <Button Content="打开模型目录" Style="{StaticResource ModernButton}" Command="{Binding OpenModelsDirectoryCommand}" Margin="0,0,6,0" />
-                            <Button Content="打开正装目录" Style="{StaticResource ModernButton}" Command="{Binding OpenSuitsDirectoryCommand}" Margin="0,0,6,0" />
-                            <Button Content="刷新模型" Style="{StaticResource GhostButton}" Command="{Binding RefreshAiModelsCommand}" />
-                        </WrapPanel>
-                        <Separator Margin="0,12" />
-                        <Button Content="打开软件数据目录" Style="{StaticResource GhostButton}"
-                                Command="{Binding OpenPortableDataFolderCommand}" HorizontalAlignment="Left" />
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-        </TabControl>
-    </DockPanel>
+                    </ScrollViewer>
+                </TabItem>
+                <TabItem Header="打印与导出" Style="{StaticResource StudioTabItem}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="16,6,16,12">
+                            <TextBlock Text="默认打印机" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding DefaultPrinterChoices}" DisplayMemberPath="Value" SelectedValuePath="Key"
+                                      SelectedValue="{Binding DefaultPrinterName, Mode=TwoWay}" Margin="0,0,0,8" />
+                            <CheckBox Content="启动时优先选择上次打印使用的设备" IsChecked="{Binding UseLastPrintedPrinter}" Margin="0,0,0,7" />
+                            <CheckBox Content="显示虚拟打印机（PDF、XPS 等）" IsChecked="{Binding ShowVirtualPrinters}" />
+                            <Separator Margin="0,12" />
+                            <TextBlock Text="打印分辨率（DPI）" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding DpiOptions}" SelectedItem="{Binding PrintDpi, Mode=TwoWay}"
+                                      HorizontalAlignment="Left" MinWidth="100" Margin="0,0,0,10" />
+                            <TextBlock Text="导出分辨率（DPI）" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <ComboBox ItemsSource="{Binding DpiOptions}" SelectedItem="{Binding ExportDpi, Mode=TwoWay}"
+                                      HorizontalAlignment="Left" MinWidth="100" Margin="0,0,0,10" />
+                            <controls:StudioSliderRow x:Name="JpegQualitySlider" LabelWidth="100" Title="JPG 图片品质" Minimum="75" Maximum="100"
+                                                      Step="1" Value="{Binding JpegQuality}" />
+                            <controls:StudioSliderRow x:Name="OutputSharpeningSlider" LabelWidth="100" Title="输出锐化强度" Minimum="0" Maximum="100"
+                                                      Step="5" DefaultValue="0" Value="{Binding OutputSharpeningAmount}" Margin="0,4,0,0" />
+                            <CheckBox Content="导出 JPG/PNG 时嵌入 sRGB 配置文件" IsChecked="{Binding EmbedIccProfileOnExport}" Margin="0,8,0,6" />
+                            <TextBlock Text="默认 300 DPI、JPG 品质 100。输出锐化在最终像素尺寸上只锐化亮度，可减轻相纸输出发虚。"
+                                       TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,2,0,8" />
+                            <Button Content="恢复输出默认值" Style="{StaticResource GhostButton}" Click="ResetExportDefaults_Click"
+                                    HorizontalAlignment="Left" />
+                            <Separator Margin="0,12" />
+                            <TextBlock Text="色彩配置与软打样" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <CheckBox Content="画布软打样" IsChecked="{Binding EnableSoftProofing}" Margin="0,0,0,8" />
+                            <ComboBox ItemsSource="{Binding AvailableIccFiles}" SelectedItem="{Binding SelectedIccPath, Mode=TwoWay}" Margin="0,0,0,8" />
+                            <StackPanel IsEnabled="{Binding EnableSoftProofing}">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                    <TextBlock Text="渲染意图" Style="{StaticResource FieldLabel}" Margin="0,0,8,0" />
+                                    <ComboBox ItemsSource="{Binding SoftProofIntentOptions}" DisplayMemberPath="Value" SelectedValuePath="Key"
+                                              SelectedValue="{Binding SoftProofIntent, Mode=TwoWay}" MinWidth="170" />
+                                </StackPanel>
+                                <CheckBox Content="模拟纸白（绝对比色）" IsChecked="{Binding SoftProofSimulatePaperWhite}" Margin="0,0,0,6" />
+                                <CheckBox Content="色域警告（超出色域处以洋红标出）" IsChecked="{Binding SoftProofGamutWarning}" Margin="0,0,0,8" />
+                            </StackPanel>
+                            <Button Content="导入 ICC 配置…" Style="{StaticResource ModernButton}" Click="ImportIcc_Click" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+                <TabItem Header="高级" Style="{StaticResource StudioTabItem}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Margin="16,6,16,12">
+                            <TextBlock Text="离线识别" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <TextBlock Text="{Binding AiMattingStatusText}" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding FaceDetectionStatusText}" TextWrapping="Wrap" Margin="0,4,0,8" />
+                            <ComboBox ItemsSource="{Binding AvailableAiModels}" SelectedItem="{Binding SelectedAiModelName, Mode=TwoWay}"
+                                      IsEnabled="{Binding CanSelectAiModel}" Margin="0,0,0,6" />
+                            <WrapPanel>
+                                <Button Content="打开模型目录" Style="{StaticResource ModernButton}" Command="{Binding OpenModelsDirectoryCommand}" Margin="0,0,6,0" />
+                                <Button Content="打开正装目录" Style="{StaticResource ModernButton}" Command="{Binding OpenSuitsDirectoryCommand}" Margin="0,0,6,0" />
+                                <Button Content="刷新模型" Style="{StaticResource GhostButton}" Command="{Binding RefreshAiModelsCommand}" />
+                            </WrapPanel>
+                            <Separator Margin="0,12" />
+                            <Button Content="打开软件数据目录" Style="{StaticResource GhostButton}"
+                                    Command="{Binding OpenPortableDataFolderCommand}" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+        </DockPanel>
+        <Border Grid.Row="1" Style="{StaticResource DialogFooter}">
+            <Button Content="完成" IsCancel="True" Style="{StaticResource DialogPrimaryButton}" HorizontalAlignment="Right" />
+        </Border>
+    </Grid>
 </Window>

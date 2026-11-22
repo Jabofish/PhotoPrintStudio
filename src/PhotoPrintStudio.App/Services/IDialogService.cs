@@ -28,6 +28,7 @@ public interface IDialogService
     string? ShowOpenFileDialog(string title, string filter, string? initialDir = null);
     string? ShowOpenFolderDialog(string title, string? initialDir = null);
     void OpenPathInShell(string path);
+    void RevealFileInShell(string filePath) => OpenPathInShell(Path.GetDirectoryName(filePath) ?? "");
 }
 
 public sealed class WpfDialogService : IDialogService
@@ -98,5 +99,19 @@ public sealed class WpfDialogService : IDialogService
     {
         if (string.IsNullOrWhiteSpace(path)) return;
         Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+    }
+
+    public void RevealFileInShell(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return;
+        string fullPath = Path.GetFullPath(filePath);
+        if (File.Exists(fullPath))
+        {
+            Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{fullPath}\"") { UseShellExecute = true });
+        }
+        else if (Path.GetDirectoryName(fullPath) is { } dir && Directory.Exists(dir))
+        {
+            OpenPathInShell(dir);
+        }
     }
 }

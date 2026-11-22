@@ -15,6 +15,7 @@ public interface IPrintService
     IReadOnlyList<string> GetInstalledPrinters();
     string? GetDefaultPrinterName() => null;
     PrinterDeviceSummary? InspectPrinter(string printerName);
+    string? GetGeometryCalibrationKey(PrintSheet sheet, string printerName, PrinterCalibrationProfile calibration, int dpi) => null;
 
     void PrintSheets(
         IReadOnlyList<PrintSheet> sheets,

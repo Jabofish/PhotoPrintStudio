@@ -11,21 +11,26 @@ public partial class CalibrationDialog : Window
 {
     private readonly MainViewModel _vm;
     private readonly PrinterCalibrationProfile _draft;
+    private PrinterCalibrationProfile _measuredWith;
+    private PrinterGeometryCalibration? _calculatedGeometry;
 
-    public CalibrationDialog(MainViewModel vm)
+    public CalibrationDialog(MainViewModel vm, PrinterCalibrationProfile profile)
     {
         _vm = vm;
         InitializeComponent();
         SourceInitialized += (_, _) => ThemeManager.ApplyWindowTitleBarTheme(this, _vm.IsDarkTheme);
 
-        _draft = _vm.CurrentCalibration.Clone();
-        PrinterNameLabel.Text = $"当前绑定设备：{_vm.SelectedPrinterName}";
+        _draft = profile;
+        _measuredWith = _draft.Clone();
+        PrinterNameLabel.Text = $"打印机：{_vm.SelectedPrinterName}";
         if (_vm.ActiveSheet is { } sheet)
         {
             var (horizontal, vertical) = CalibrationCardRenderer.GetRuleLengths(sheet.PaperWidthMm, sheet.PaperHeightMm);
-            MeasHBox.Text = ExpHBox.Text = horizontal.ToString(CultureInfo.InvariantCulture);
-            MeasVBox.Text = ExpVBox.Text = vertical.ToString(CultureInfo.InvariantCulture);
+            ExpHBox.Text = horizontal.ToString(CultureInfo.InvariantCulture);
+            ExpVBox.Text = vertical.ToString(CultureInfo.InvariantCulture);
         }
+        MeasHBox.Clear();
+        MeasVBox.Clear();
 
         LoadFieldsFromProfile(_draft);
     }
@@ -52,14 +57,26 @@ public partial class CalibrationDialog : Window
             !double.TryParse(MeasVBox.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out double mv) ||
             !PositiveLength(eh) || !PositiveLength(mh) || !PositiveLength(ev) || !PositiveLength(mv))
         {
-            MessageBox.Show("请输入有效的数字长度。", "输入提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, "请输入大于 0 的长度（mm）。", "打印校准", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         ApplyFieldsToProfile();
-        var updated = CalibrationCardRenderer.ComputeCalibrationFromMeasured(_draft, eh, mh, ev, mv);
+        var updated = CalibrationCardRenderer.ComputeCalibrationFromMeasured(_draft, eh, mh, ev, mv, _measuredWith);
+        var (oldX, oldY, _, _) = _measuredWith.GetGeometryTransform();
+        var (newX, newY, _, _) = updated.GetGeometryTransform();
+        if (Math.Abs(mh * newX / oldX - eh) > 0.05 || Math.Abs(mv * newY / oldY - ev) > 0.05)
+        {
+            MessageBox.Show(this, "实测差值超出可校准范围。请检查纸型和驱动扩张设置，确认量的是测试卡标尺的两条端线。", "打印校准",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
         ScaleXBox.Text = updated.ScaleXPercent.ToString("0.##", CultureInfo.InvariantCulture);
         ScaleYBox.Text = updated.ScaleYPercent.ToString("0.##", CultureInfo.InvariantCulture);
+        _calculatedGeometry = updated.CaptureGeometry();
+        ScaleXBox.BringIntoView();
+        ScaleXBox.Focus();
+        ScaleXBox.SelectAll();
     }
 
     private void PresetSublimationOverscan_Click(object sender, RoutedEventArgs e)
@@ -70,7 +87,9 @@ public partial class CalibrationDialog : Window
     private async void PrintTestCard_Click(object sender, RoutedEventArgs e)
     {
         ApplyFieldsToProfile();
-        await _vm.PrintCalibrationCardWithProfileAsync(_draft);
+        var printedProfile = _draft.Clone();
+        if (await _vm.PrintCalibrationCardWithProfileAsync(printedProfile))
+            _measuredWith = printedProfile;
     }
 
     private void ResetAll_Click(object sender, RoutedEventArgs e)
@@ -83,7 +102,25 @@ public partial class CalibrationDialog : Window
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         ApplyFieldsToProfile();
-        _vm.CurrentCalibration = _draft;
+        if (_draft.GeometryTarget is { } key)
+        {
+            var profile = _vm.CurrentCalibration.Clone();
+            var geometry = _draft.CaptureGeometry();
+            var prior = profile.GeometryByOutput.GetValueOrDefault(key);
+            profile.GeometryByOutput[key] = geometry with
+            {
+                HasMeasuredScale = MatchesScale(_calculatedGeometry, geometry) ||
+                    (prior is { HasMeasuredScale: true } && MatchesScale(prior, geometry))
+            };
+            profile.BrightnessCompensation = _draft.BrightnessCompensation;
+            profile.GammaCompensation = _draft.GammaCompensation;
+            profile.TemperatureCompensation = _draft.TemperatureCompensation;
+            _vm.CurrentCalibration = profile;
+        }
+        else
+        {
+            _vm.CurrentCalibration = _draft;
+        }
         _vm.SaveCurrentCalibrationCommand.Execute(null);
         DialogResult = true;
         Close();
@@ -103,6 +140,9 @@ public partial class CalibrationDialog : Window
         cal.GammaCompensation = Math.Clamp(ParseDouble(CompGammaBox.Text, cal.GammaCompensation), 0.5, 2.0);
         cal.TemperatureCompensation = Math.Clamp(ParseDouble(CompTempBox.Text, cal.TemperatureCompensation), -50, 50);
     }
+
+    private static bool MatchesScale(PrinterGeometryCalibration? baseline, PrinterGeometryCalibration value) =>
+        baseline != null && baseline.ScaleX == value.ScaleX && baseline.ScaleY == value.ScaleY && baseline.Overscan == value.Overscan;
 
     private static bool PositiveLength(double value) => double.IsFinite(value) && value > 1;
 

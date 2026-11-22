@@ -160,6 +160,19 @@ public static class LayoutEngine
         },
         new()
         {
+            Id = "tpl_6in_2in1_left",
+            Name = "六寸并排（左对齐）",
+            Subtitle = "63 × 90 mm，右侧留白",
+            Scenario = LayoutScenario.SixInchTwoInOne,
+            DefaultPaperId = "paper_6inch",
+            DefaultLandscape = true,
+            DefaultMarginMm = 4.0,
+            DefaultGapMm = 8.0,
+            DefaultCropMarkStyle = CropMarkStyle.None,
+            TemplateKind = "six_2in1_left"
+        },
+        new()
+        {
             Id = "tpl_6in_2in1_full",
             Name = "六寸横向二合一（满幅双3寸，带出血）",
             Subtitle = "左右各 76.2×101.6 mm，含中线裁切标",
@@ -200,20 +213,6 @@ public static class LayoutEngine
             IdPhotoSpecId = "id_std_card",
             TemplateKind = "six_2in1_card_duplex"
         },
-        new()
-        {
-            Id = "tpl_6in_2in1_compare",
-            Name = "六寸双图对比 / Before-After 拼贴",
-            Subtitle = "带底部极简注记区，可独立填写两格标注",
-            Scenario = LayoutScenario.SixInchTwoInOne,
-            DefaultPaperId = "paper_6inch",
-            DefaultLandscape = true,
-            DefaultMarginMm = 5.0,
-            DefaultGapMm = 4.0,
-            DefaultCropMarkStyle = CropMarkStyle.SolidThinBorder,
-            TemplateKind = "six_2in1_compare"
-        },
-
         // === 3. 拍立得尺寸排版模板 ===
         new()
         {
@@ -367,16 +366,15 @@ public static class LayoutEngine
         {
             Id = "tpl_grid_6in_2x2",
             Name = "6寸 2×2 四宫格拼图",
-            Subtitle = "等分四图，带精致间距与圆角",
+            Subtitle = "等分四图，直角留白",
             Scenario = LayoutScenario.FreeGrid,
             DefaultPaperId = "paper_6inch",
             DefaultLandscape = true,
             DefaultMarginMm = 4.5,
             DefaultGapMm = 4.0,
-            DefaultCropMarkStyle = CropMarkStyle.DashedBorder,
+            DefaultCropMarkStyle = CropMarkStyle.OuterCornerTicks,
             CustomRows = 2,
             CustomCols = 2,
-            CustomCornerRadiusMm = 1.5,
             TemplateKind = "free_grid"
         },
         new()
@@ -518,8 +516,9 @@ public static class LayoutEngine
             IsLandscape = landscape,
             Scenario = template.Scenario,
             TemplateId = template.Id,
+            IsCustomFreeform = template.IsCustomFreeform,
             CropMarkStyle = cropMarkOverride ?? template.DefaultCropMarkStyle,
-            ShowCenterFoldTick = template.Scenario == LayoutScenario.SixInchTwoInOne,
+            ShowCenterFoldTick = template.ShowCenterFoldTickByDefault,
             AlignFlushToEdge = flushToEdge
         };
 
@@ -534,11 +533,15 @@ public static class LayoutEngine
                 break;
 
             case "six_2in1_full":
-                BuildTwoInOneHorizontal(sheet, margin, gap, bleed, false);
+                BuildTwoInOneHorizontal(sheet, margin, gap, bleed);
                 break;
 
             case "six_2in1_border":
-                BuildTwoInOneHorizontal(sheet, margin, gap, 0.0, false);
+                BuildTwoInOneHorizontal(sheet, margin, gap, 0.0);
+                break;
+
+            case "six_2in1_left":
+                BuildTwoInOneHorizontal(sheet, margin, gap, 0.0, maxPhotoSize: (63, 90));
                 break;
 
             case "six_2in1_vert":
@@ -547,10 +550,6 @@ public static class LayoutEngine
 
             case "six_2in1_card_duplex":
                 BuildCardDuplexTwoInOne(sheet, margin, gap, flushToEdge);
-                break;
-
-            case "six_2in1_compare":
-                BuildTwoInOneHorizontal(sheet, margin, gap, 0.0, true);
                 break;
 
             case "polaroid_grid":
@@ -577,6 +576,10 @@ public static class LayoutEngine
 
             case "single_photo":
                 BuildFreeGrid(sheet, 1, 1, margin, 0, bleed, template.CustomCornerRadiusMm);
+                break;
+
+            case LayoutTemplateDefinition.KindCustomFreeform:
+                BuildCustomFreeform(sheet, template);
                 break;
 
             case "free_grid":
@@ -761,23 +764,32 @@ public static class LayoutEngine
         }
     }
 
-    private static void BuildTwoInOneHorizontal(PrintSheet sheet, double margin, double gap, double bleed, bool compareMode)
+    private static void BuildTwoInOneHorizontal(PrintSheet sheet, double margin, double gap, double bleed,
+        (double Width, double Height)? maxPhotoSize = null)
     {
         double slotW = (sheet.PaperWidthMm - margin * 2 - gap) / 2.0;
         double slotH = sheet.PaperHeightMm - margin * 2;
         if (slotW <= 1 || slotH <= 1) return;
+        double y = margin;
+        if (maxPhotoSize is { } size)
+        {
+            double scale = Math.Min(1.0, Math.Min(slotW / size.Width, slotH / size.Height));
+            slotW = size.Width * scale;
+            slotH = size.Height * scale;
+            if (!sheet.AlignFlushToEdge)
+                y = (sheet.PaperHeightMm - slotH) / 2.0;
+        }
         for (int i = 0; i < 2; i++)
         {
             sheet.Slots.Add(new LayoutSlot
             {
                 Index = i,
                 XMm = Math.Round(margin + i * (slotW + gap), 3),
-                YMm = Math.Round(margin, 3),
+                YMm = Math.Round(y, 3),
                 WidthMm = Math.Round(slotW, 3),
                 HeightMm = Math.Round(slotH, 3),
                 BleedMm = bleed,
-                Label = compareMode ? (i == 0 ? "左图 (Before)" : "右图 (After)") : $"二合一 #{i + 1}",
-                CustomCaption = compareMode ? (i == 0 ? "BEFORE" : "AFTER") : null
+                Label = $"二合一 #{i + 1}"
             });
         }
     }
@@ -996,6 +1008,42 @@ public static class LayoutEngine
         }
     }
 
+    private static void BuildCustomFreeform(PrintSheet sheet, LayoutTemplateDefinition template)
+    {
+        if (!string.IsNullOrWhiteSpace(template.CustomCanvasBackgroundHex))
+            sheet.CanvasBackgroundHex = template.CustomCanvasBackgroundHex;
+
+        if (template.CustomSlots == null || template.CustomSlots.Count == 0)
+            return;
+
+        int idx = 0;
+        foreach (var def in template.CustomSlots)
+        {
+            if (!double.IsFinite(def.WidthMm) || !double.IsFinite(def.HeightMm) ||
+                def.WidthMm <= 0.1 || def.HeightMm <= 0.1)
+                continue;
+
+            double rot = ((Math.Round(def.SlotRotationDegrees / 90.0) * 90.0) % 360.0 + 360.0) % 360.0;
+            sheet.Slots.Add(new LayoutSlot
+            {
+                Id = string.IsNullOrWhiteSpace(def.Id) ? Guid.NewGuid().ToString("N") : def.Id,
+                Index = idx,
+                XMm = Math.Round(def.XMm, 3),
+                YMm = Math.Round(def.YMm, 3),
+                WidthMm = Math.Round(def.WidthMm, 3),
+                HeightMm = Math.Round(def.HeightMm, 3),
+                BleedMm = Math.Max(0, Math.Round(def.BleedMm, 3)),
+                CornerRadiusMm = Math.Max(0, Math.Round(def.CornerRadiusMm, 3)),
+                SlotRotationDegrees = rot,
+                Label = string.IsNullOrWhiteSpace(def.Label) ? $"图片框 {idx + 1}" : def.Label,
+                TemplateFitMode = def.FitModeOverride,
+                IdPhotoSpecId = def.IdPhotoSpecId,
+                PolaroidStyle = def.PolaroidStyle?.Clone()
+            });
+            idx++;
+        }
+    }
+
     private static void BuildFreeGrid(
         PrintSheet sheet,
         int rows,
@@ -1057,14 +1105,18 @@ public static class LayoutEngine
             var sheet = prototypeSheet.Clone();
             sheet.SheetName = $"第 {p + 1} 页";
             int assetIdx = p * perPage;
-            if (orientSinglePhotoPages && sheet.Scenario == LayoutScenario.SinglePhoto && sheet.Slots.Count == 1)
+            if (orientSinglePhotoPages && !sheet.IsCustomFreeform && sheet.Scenario == LayoutScenario.SinglePhoto && sheet.Slots.Count == 1)
                 OrientSinglePhotoPage(sheet, assets[assetIdx]);
             foreach (var slot in OrderSlots(sheet.Slots, order))
             {
+                slot.SlotZoom = 1.0;
+                slot.SlotPanX = 0.0;
+                slot.SlotPanY = 0.0;
+                slot.FitModeOverride = null;
                 if (assetIdx < assets.Count)
                 {
                     slot.PhotoAssetId = assets[assetIdx++].Id;
-                    if (fit.HasValue) slot.FitModeOverride = fit;
+                    slot.FitModeOverride = fit;
                 }
                 else
                 {
